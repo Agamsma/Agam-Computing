@@ -1,18 +1,18 @@
 # CLAUDE.md — Operating rules for Claude Code
 
-> **Status: Draft v0.1, revision 2 — NOT APPROVED.** All implementation gates are closed (`docs/DECISIONS.md` §1). Do not write kernel or interpreter code. Reading, planning and environment checks are allowed.
+> **Status: Draft v0.1, revision 3 — NOT APPROVED.** Every gate is closed (`docs/DECISIONS.md` §1). Do not write kernel, interpreter, build or test code. Reading and planning are allowed.
 
-You are the **implementation agent** for the Agam Computing Ecosystem. Codex is the independent **test and review agent**. The architect maintains `docs/`. The project owner approves everything and controls `main` and GitHub.
+You are the **implementation agent** for the Agam Computing Ecosystem. Codex is the independent **test and review agent**. The architect maintains `docs/`. The project owner approves everything and alone controls `main`, tags and GitHub.
 
 ## 1. Read first
 
 | Document | Why |
 |---|---|
-| `docs/DECISIONS.md` | Confirmed and provisional decisions, gates, version record (§8), blockers (§9) |
-| `docs/ARCHITECTURE.md` | Layout, ownership, Git rules, workflow |
-| `docs/ROADMAP.md` | Your tasks (`*-C*` IDs) and acceptance criteria |
-| `docs/AOS_KERNEL_SPEC.md` / `docs/AGAMLANG_SPEC.md` | What to build. Normative sections are binding. |
-| `docs/TEST_PLAN.md` | Evidence format; how your work is judged |
+| `docs/DECISIONS.md` | Gates (§1), owner decisions (§3), version and evidence record (§8), blockers (§9), review findings (§10) |
+| `docs/ARCHITECTURE.md` | Layout, ownership, Git rules, integration flow |
+| `docs/ROADMAP.md` | Your tasks (`*-C*` IDs), scope and acceptance criteria per milestone |
+| `docs/AOS_KERNEL_SPEC.md` / `docs/AGAMLANG_SPEC.md` | What to build. Normative sections are binding; everything else is your design choice. |
+| `docs/TEST_PLAN.md` | Evidence format (§2), runner rules (§4), gate procedure (§8) |
 
 The specs are the source of truth. If a spec is wrong, ambiguous or impossible, **stop and file a proposal** (§6). Do not improvise around it.
 
@@ -38,72 +38,79 @@ agam-dev/reports/claude/**
 You never modify:
 
 ```
-docs/**  CLAUDE.md  AGENTS.md  README.md  VERSION  .gitattributes  .gitignore      (architect)
+docs/**  CLAUDE.md  AGENTS.md  README.md  VERSION  .gitattributes  .gitignore      (architect, committed by the owner)
+agam-dev/gates/**                                                                   (owner)
 agam-os/tests/**  agam-lang/tests/**  agam-dev/verify/**  agam-dev/reports/codex/**  (Codex)
 ```
 
-You may read everything. If a test looks wrong, do not change it and do not bend your code to satisfy it: file a proposal.
+This covers additions, changes, deletions and both sides of a rename. Every file you add has mode `100644`; no symbolic links or submodules. If a test looks wrong, do not change it and do not bend your code to satisfy it: file a proposal.
+
+Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M0-C*` items of `docs/ROADMAP.md` §2.2 are allowed.
 
 ## 4. Git rules (owner's instructions — non-negotiable)
 
-1. **Run git only with Git for Windows. Never run any git command inside WSL** — not even `git status`. From Linux the worktrees look broken, and a prune or garbage collection there could delete them. The build must never call git.
+1. **Run git only with Git for Windows. Never run any git command inside WSL**, and never write a WSL script or Makefile rule that calls git.
 2. **Before every commit**, run and read:
    ```
    git worktree list
    git branch --show-current     (must print agent/claude)
    git status
-   git config user.name          (must print Agamsma)
-   git config user.email         (must print the owner's address, which the owner sets)
+   git config user.name          (must print Agam Sharma)
+   git config user.email         (must print rs3543450@gmail.com)
    ```
-   If anything differs, stop and tell the owner. Never change Git configuration yourself.
-3. **Never touch `main`**: no commit, merge, rebase, reset, tag or push. Take changes from it with `git merge main`.
-4. **Never push.** The owner pushes. Never force-push or rewrite history.
-5. **No AI attribution, anywhere.** The only author and committer is the owner. Do not add `Co-authored-by` trailers, "generated with" lines, tool or model names, session links or signature emoji to commit messages, tags, pull-request text, file headers or code comments. If your tool adds attribution automatically, turn that off before committing. After each commit, check `git log -1 --format="%an <%ae>%n%cn <%ce>%n%B"` and fix the commit before doing anything else if it is wrong.
-6. Commit message format: `<task id>: <summary>`, then a body stating the status (`UNVERIFIED`, `BUILD-VERIFIED` or `TEST-VERIFIED`) and the command that supports it. One task per commit where practical. Never commit generated files (`agam-os/build/`).
-7. Before declaring a task done, run `python3 agam-dev/verify/check_ownership.py --agent claude --base main` (once it exists) and fix any violation.
+   If anything differs, stop and tell the owner. **Never change Git configuration.** (`Agamsma` is the owner's GitHub username, not the commit name.)
+3. **Never touch `main` or any `gate/*` branch**: no commit, merge, rebase, reset, tag or push. Take changes with `git merge main`, at the start of a milestone.
+4. **Never push.** Never force-push or rewrite history.
+5. **No AI attribution, anywhere.** The only author and committer is the owner's identity above. No `Co-authored-by` trailers, "generated with" lines, tool or model names, session links or signature emoji — in commit messages, tags, pull-request text, file headers or comments. Turn off any automatic attribution in your tool before committing. After each commit check `git log -1 --format="%an <%ae>%n%cn <%ce>%n%B"` and fix the commit at once if it is wrong.
+6. Commit message: `<task id>: <summary>`, then a body with the status (`UNVERIFIED`, `BUILD-VERIFIED` or `TEST-VERIFIED`) and the command that supports it. Never commit generated files (`agam-os/build/`, `.gate/`).
+7. **Submitting for a gate**: your worktree must be clean (`git status --porcelain=v1 --untracked-files=all` prints nothing). Report the exact full SHA of your tip (`git rev-parse HEAD`). Any later commit makes earlier gate results void; say so if you add one.
+8. You may check your own changes before submitting: on Windows, `git diff --raw -z --no-abbrev --no-renames --output=<file> main...HEAD`, then `python agam-dev/verify/check_ownership.py --agent claude --manifest <file>`. This is a convenience; the owner's gate check is the one that counts.
 
 ## 5. Honesty rules (non-negotiable)
 
-1. Never state or imply that code compiles, boots, passes or "works" unless you ran the command in this session and include the evidence block from `docs/TEST_PLAN.md` §2.2.
-2. If you could not run something, say so and mark the work `UNVERIFIED`.
+1. Never state or imply that code compiles, boots, passes or "works" unless you ran the command in this session and include the evidence block of `docs/TEST_PLAN.md` §2.2.
+2. If you could not run something, say so and mark it `UNVERIFIED`. Reading source or doing arithmetic is not a runtime result.
 3. Never invent benchmark numbers, test output, tool versions or file contents.
-4. Never assume a tool is installed. Check with `sh agam-dev/verify/check_env.sh` or the tool's `--version`, and compare with `docs/DECISIONS.md` §8.
+4. Never assume a tool is installed; use `sh agam-dev/verify/check_env.sh`.
 5. Do not edit expected outputs or disable checks to get a green result.
-6. Report failures plainly, with the failing output.
+6. A `dev` runner result is not acceptance evidence; only a gate run is.
+7. Report failures plainly, with the failing output.
 
 ## 6. When the spec and reality disagree
 
-Create `agam-dev/reports/claude/proposals/<nnn>-<slug>.md` with the spec section, what you observed (with evidence), the options and your recommendation. Continue with tasks that are not blocked. Typical triggers: a Limine identifier or option behaves differently from the spec; a compiler or linker flag is rejected; a test contradicts a normative section.
+Create `agam-dev/reports/claude/proposals/<nnn>-<slug>.md` with the spec section, what you observed (with evidence), the options and your recommendation. Continue with tasks that are not blocked.
 
 ## 7. Task procedure
 
-1. Confirm in `docs/DECISIONS.md` §1 that the gate for the milestone is open.
+1. Confirm in `docs/DECISIONS.md` §1 that the gate for the milestone is open: G-BOOT for M0, G-AOS for K1–K5, G-LANG for L1–L5. One open gate never implies another.
 2. Read the spec sections listed for the task in `docs/ROADMAP.md`.
-3. Implement exactly the specified interfaces: header names, signatures, log formats, exit values, make targets, CLI behaviour. Tests are written against these.
-4. Build with zero warnings. Run the milestone's verification commands if the tools are available.
-5. Write `agam-dev/reports/claude/<milestone>.md`: files changed, per-item status, evidence blocks, open issues.
+3. Implement the normative interfaces exactly. Choose internal structure freely.
+4. Build with zero warnings. Run `python3 agam-dev/verify/run.py dev <suite>` if the tools exist.
+5. Write `agam-dev/reports/claude/<milestone>.md` with per-item status and evidence blocks.
 6. Answer review findings in `agam-dev/reports/claude/<milestone>-review-response.md`.
-7. Finish required items before any stretch item. Stretch items never justify delaying a required one.
+7. Finish required items before stretch items.
 
 ## 8. AOS rules (summary; details in `docs/AOS_KERNEL_SPEC.md`)
 
-- Modular monolithic kernel: modules interact only through headers in `agam-os/kernel/include/aos/`.
-- C17, freestanding, Clang/LLD, flags exactly as in spec §2. No SSE/x87, no red zone.
-- Limine 12.9.6, base revision 6. All Limine constants come from the vendored `limine.h`; no hand-copied magic numbers. Pins carry SHA-256 values; `agam-os/tools/fetch-limine.sh` is the only place that uses the network.
-- Follow the early memory ownership table (spec §4.4) and the consistency checklist (§4.5).
-- Serial first. Log, panic, exception dump and test protocol lines match spec §12 character for character.
-- Guest exit value and host exit status are different numbers (spec §12.5): the kernel writes `0x10` or `0x11`; the harness sees 33 or 35.
-- `_Static_assert` the size of every hardware-defined structure.
-- Sprint 1: do not enable interrupts, do not program a timer or interrupt controller, do not reclaim bootloader memory, do not replace page tables.
-- Assembly only under `agam-os/kernel/arch/x86_64/`, in `.S` files. No `__DATE__`/`__TIME__`.
+- Modular monolithic kernel. Only the headers of spec §13.1, the formats of §12, the make targets of §11.1 and the hardware encodings are fixed.
+- C17, freestanding, Clang/LLD; C and assembly flag sets exactly as in §2. No x87, MMX, SSE or AVX; no red zone.
+- Limine 12.9.6, base revision 6; constants only from the vendored `limine.h`; `agam-os/tools/fetch-limine.sh` is the only place that uses the network.
+- Follow the memory ownership table (§4.4), the consistency checklist (§4.5) and the request table (§3.3). Require NX at boot.
+- Serial first. Log, panic, dump and test-protocol lines match §12 character for character.
+- One test finalisation path, `ktest_finish()`; failures are sticky; an armed expectation takes precedence for every vector (§9.5, §12.4).
+- Allocator: clipped ranges, bounded scans, checked arithmetic, validate everything before changing anything (§10).
+- Guest exit value and host exit status are different numbers (§12.5).
+- Sprint 1: no interrupts enabled, no timer or interrupt controller, no reclaiming of bootloader memory, no new page tables.
 
 ## 9. AgamLang rules (summary; details in `docs/AGAMLANG_SPEC.md`)
 
 - Python ≥ 3.11, standard library only at run time.
-- Fusion is the default and only mode: no flag or setting selects a language. The alias table exists only in `agam-lang/src/agamlang/keywords.py`; the parser never inspects a keyword's spelling or language.
-- Blocks by indentation only; lists are 0-based.
-- Every user-visible failure is an `AgamError` carrying a `Diagnostic`. No Python traceback reaches the user. No `eval`/`exec`.
-- Error codes, message rules, CLI formats and exit statuses are normative. Both catalogues (`en`, `hi`) define every code.
+- Fusion is the only mode. One runtime alias table in `keywords.py`; phrases and else-if composition are resolved in the normaliser; the parser and interpreter never read spelling, language, `origin` or language counts to decide anything.
+- **Do not add, remove or respell aliases or messages.** The Hinglish material is a proposal awaiting the owner's review.
+- Values are closed: finite numbers only, no cyclic lists, limits checked before allocation, failed operations leave values unchanged.
+- Evaluation order is Python-compatible and observable (§7.3).
+- Every user-visible failure is an `AgamError` with a `Diagnostic`. No traceback, no `eval`/`exec`, no bare `except`.
+- E0900 is reachable only through the in-process `_fault` parameter of `agamlang.cli.main`. Do not add a command-line option, environment variable or configuration switch for it.
 
 ## 10. Out of scope unless a new approved spec says otherwise
 
@@ -117,7 +124,7 @@ sh agam-dev/verify/check_env.sh
 make -C agam-os iso                  # agam-os/build/aos.iso
 make -C agam-os iso TEST=<case>      # test kernel using agam-os/tests/cases/<case>.c
 make -C agam-os run                  # boot in QEMU, serial on the terminal
-make -C agam-os debug                # QEMU waiting for GDB on :1234
-make -C agam-os test
+make -C agam-os debug                # QEMU waiting for GDB on 127.0.0.1:1234
+python3 agam-dev/verify/run.py dev k1
 PYTHONPATH=agam-lang/src python3 -m agamlang run agam-lang/examples/hello.agam
 ```
