@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 4 — NOT APPROVED.** A document-only correction pass after the second independent review. This document changes for AR-25, AR-26 and AR-27 (layout, integration flow, tool names); those findings are *addressed in draft — pending independent re-review* (`DECISIONS.md` §10.2). Nothing here authorises implementation. |
-| Date | 2026-11-13 (revision 4) |
+| Status | **Draft v0.1, revision 5 — NOT APPROVED.** A focused correction after the third independent review. This document changes for AR-34, AR-35 and AR-37…AR-39 (ownership table, integration flow, evidence record); those findings are *addressed in draft — pending independent re-review* (`DECISIONS.md` §10.3). Nothing here authorises implementation. |
+| Date | 2026-11-13 (revision 5) |
 | Owner | Project owner (approves); Architect (maintains) |
 | Related | `DECISIONS.md`, `ROADMAP.md`, `AOS_KERNEL_SPEC.md`, `AGAMLANG_SPEC.md`, `TEST_PLAN.md`, `CODEX_REVIEW_BRIEF.md`, `../CLAUDE.md`, `../AGENTS.md` |
 
@@ -193,7 +193,10 @@ Fusion is the default and only mode (O-07): one lexer, one grammar, one AST, one
 | `agam-dev/reports/claude/**` | Claude Code |
 | `agam-os/tests/**`, `agam-lang/tests/**` | Codex |
 | `agam-dev/verify/**`, `agam-dev/reports/codex/**` | Codex |
-| `agam-os/build/**`, `.gate/**`, caches | Untracked and ignored; this rule takes precedence over the broader `agam-os/**` rule |
+| `agam-os/build/**`, `.gate/**` | Untracked and ignored outputs; this rule takes precedence over the broader `agam-os/**` rule |
+| `__pycache__/`, `.pytest_cache/`, `*.pyc` | Ignored by Git, but **not outputs**: Python can execute them, so none may exist in the integration worktree during a gate run (`TEST_PLAN.md` §4.6) |
+
+`agam-dev/gates/ACCEPTED` exists from the pre-agent baseline as an empty file, created by the owner (`ROADMAP.md` M0-A1). Gate records and archived review evidence are byte-exact files that Git never converts (`TEST_PLAN.md` §4.9).
 
 The two agents' path sets are disjoint. Additions, modifications, deletions and both sides of a rename must all fall inside the writer's set. Every tracked file has mode `100644`; symbolic links and submodules are not allowed.
 
@@ -233,14 +236,19 @@ The two agents' path sets are disjoint. Additions, modifications, deletions and 
         merge result compared record for record with the two manifests — tool from TOOLS
         candidate catalogue compared with the trusted inventory       — tool from TOOLS
         │
- WSL2:  run.py gate <milestone> — refuses to run unless the working tree equals GATE_HEAD
+ WSL2:  system tools first: bytecode caches and build output removed, cache writing off,
+        empty cache prefix outside the tree — before any candidate code is imported
+        run.py gate <milestone> — refuses to run unless the working tree equals GATE_HEAD
+        and holds no cache or unlisted file
         │
  owner: summary compared with the trusted inventory                   — tool from TOOLS
         live check repeated
         │
         ├─ any failure: gate branch deleted, main untouched, new tips, start again
         └─ pass + reviews + owner's acceptance:
-               record commit GATE_REC (delta checked: gate record files only)
+               record commit GATE_REC — checked against the judged files: exact file set,
+               archived bytes equal judged bytes, ACCEPTED grown by exactly one line;
+               the archived summary is judged again
                live check repeated; main fast-forwarded and tagged by the owner
 ```
 
@@ -325,12 +333,15 @@ Exact values are in `DECISIONS.md` §8.
 | GDT, TSS, IDT and interrupt-frame arithmetic | Codex (probe and manuals) | Consistent. Not a CPU execution result. |
 | Exit-value formula | Codex (QEMU 8.2.2 source); architect (boot sectors on QEMU 8.2.2 in a scratch sandbox) | Guest `0x10` → host 33; `0x11` → 35; reset → 0 |
 | C flag set and header identifiers | Architect, throwaway probe, Clang 18.1.3, scratch sandbox | Compiles, zero warnings. Not linked; no assembly. |
-| Branch and worktree state for revision 4 | Architect, by reading the repository's `HEAD`, ref files and objects; **no git command was run** | `ecosystem` on `review/architecture-v0.1` at `fd2670d`, the nine documents identical to that commit before editing; `agent/codex` at `fd2670d`; `main` and `agent/claude` at `4b2edd6` |
+| Independent re-review of revision 4 (commit `cbf2cff`) | Codex | Not ready as a whole. Of the 14 findings re-reviewed: 11 Resolved, 3 Partially Resolved (AR-14, AR-27, AR-31), at specification level. New: 3 Major (AR-34…36), 3 Minor (AR-37…39). AOS track: ready for scoped owner consideration. Report untracked; cited by commit and SHA-256. |
+| Stale-bytecode observation; read-only blob export and attribute-filter comparison | Codex (third review, evidence R4-E02, R4-E03), Windows CPython 3.13.3 and Git for Windows | A cache with matching size and timestamp is executed in place of the source, also with `-B`. Normalising one CRLF evidence file changes its blob ID. |
+| Cache containment settings | Architect, scratch fixtures in a cloud sandbox, CPython 3.12.3 and 3.13.18, pytest 9.1.1 — not the owner's WSL, not project code | Timestamp caches and unchecked hash-based caches are executed in place of the source, also with `-B`; `-E` switches the environment variables off. With `-B -X pycache_prefix=<new empty directory>` the source is used and nothing is written. A sourceless `.pyc` is still importable, so absence must be checked. A stale `pytest` cache can make a failing test pass. Details: `DECISIONS.md` §8.3. |
+| Branch and worktree state for revision 5 | Architect, by reading the repository's `HEAD`, ref files and objects; **no git command was run** | `ecosystem` on `review/architecture-v0.1` at `cbf2cff` (revision 4, committed by the owner), the nine documents identical to that commit before editing; `agent/codex` at `fd2670d`; `main` and `agent/claude` at `4b2edd6` |
 | Owner's WSL2 toolchain | Owner (reported) | Ubuntu 24.04.5; Clang 18.1.3; LLD 18.1.3; QEMU 8.2.2; GDB 15.1; Make 4.3; `clang-18`, `ld.lld-18`, `llvm-objdump-18`, `llvm-readelf-18`, `llvm-nm-18`, `llvm-objcopy-18`, `llvm-ar-18` in PATH. No output filed yet. |
-| Revision 4 document checks | Architect, scratch scripts | Cross-document identifier, table, inventory and catalogue consistency; arithmetic of the worked examples. Listed in the revision's change summary. Not a substitute for re-review. |
+| Revision 4 and 5 document checks | Architect, scratch scripts | Cross-document identifier, table, inventory and catalogue consistency; arithmetic and caret positions of the worked examples. Listed in each revision's change summary. Not a substitute for re-review. |
 | **Not performed by anyone** | — | Any project build, link, ISO, boot, exception, allocator or interpreter run; any gate step other than the read-only flags above; signature check of the Limine asset |
 
-No kernel, interpreter, harness, test or checker code was written. Nothing was committed, merged, tagged or pushed for revision 4, and Git configuration was not changed. The review reports and their evidence were not modified.
+No kernel, interpreter, harness, test or checker code was written. Nothing was committed, merged, tagged or pushed by the architect for revision 4 or 5, and Git configuration was not changed; revision 4 was committed by the owner. The review reports and their evidence were not modified.
 
 ---
 
@@ -340,7 +351,7 @@ Blockers (full table: `DECISIONS.md` §9). None is cleared by this revision.
 
 | Blocker | Gate |
 |---|---|
-| B-07 process contract (AR-01…04, AR-15, AR-18, AR-25…27) — pending re-review | G-BOOT |
+| B-07 process contract (AR-01…04, AR-15, AR-18, AR-25…27, AR-34, AR-35, AR-37…39) — pending re-review | G-BOOT |
 | B-04 approved documents on `main` | G-BOOT |
 | B-01 toolchain evidence; B-03 attribution evidence | M0 acceptance |
 | B-02 owner's disposition of the Limine pin evidence; B-08 kernel contract — pending re-review | G-AOS |

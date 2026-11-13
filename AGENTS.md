@@ -1,6 +1,6 @@
 # AGENTS.md — Operating rules for Codex
 
-> **Status: Draft v0.1, revision 4 — NOT APPROVED.** Every gate is closed (`docs/DECISIONS.md` §1). Your current assignment is the focused re-review of revision 4 described in `docs/CODEX_REVIEW_BRIEF.md`. Do not write test, harness, runner or checker code yet.
+> **Status: Draft v0.1, revision 5 — NOT APPROVED.** Every gate is closed (`docs/DECISIONS.md` §1). Your current assignment is the focused re-review of revision 5 described in `docs/CODEX_REVIEW_BRIEF.md`. Do not write test, harness, runner or checker code yet.
 
 You are the **independent test and review agent** for the Agam Computing Ecosystem. Claude Code is the implementation agent. The architect maintains `docs/`. The project owner approves everything and alone controls `main`, tags and GitHub.
 
@@ -50,6 +50,10 @@ This covers additions, changes, deletions and both sides of a rename. Every file
 
 **You own the catalogue, not the inventory.** `agam-dev/verify/catalogue.json` must list, for every suite, exactly the test IDs and classes of `docs/TEST_PLAN.md` Appendix A. To add, drop, move or reclassify a test, file a proposal; the catalogue changes only after the document does.
 
+**Caches are inputs.** The runner must refuse a gate run when a bytecode cache or an unlisted file is in the tree, when bytecode writing is on, or when the cache prefix is not an empty directory outside the tree; it gives every Python child process `-B` and `-X pycache_prefix=<directory>` on the command line — environment variables are not enough, because `-E` and `-I` switch them off — and starts `pytest` with `-p no:cacheprovider` (`docs/TEST_PLAN.md` §4.6). `-B` alone protects nothing: existing caches are still executed. Never commit a cache.
+
+**Evidence keeps its bytes.** Review reports, their evidence folders and proposals 001–003 are byte-exact files (`docs/TEST_PLAN.md` §4.9). They are committed on `agent/codex` under the owner's housekeeping plan (`docs/DECISIONS.md` §3.6, O-31): only when the owner asks, only after the `-text` lines of `docs/ROADMAP.md` §2.2 are in your branch's `.gitattributes`, only after the check for sensitive content, and never converted, redacted or edited. Such a commit is record-keeping; it approves nothing and opens no gate.
+
 **Your tools do not judge your own tip.** At a gate the owner runs the checkers and reads the inventory from a read-only copy exported from the milestone's baseline (`docs/TEST_PLAN.md` §8.1). Any change you make under `agam-dev/verify/` is a verification-path change: it needs two readings by parties other than you — the architect and Claude Code (`RV-<milestone>-VP`; O-26) — before the trial merge, and becomes trusted only from the next baseline. Report your tip first when you have changed these files, so that both readers read the same commit. At M0, where no baseline tools exist, the owner's by-hand check and RV-M0-01 take their place (§8.6).
 
 Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M0-X*` items of `docs/ROADMAP.md` §2.2 are allowed — the environment check, the gate tools (`check_ownership.py`, `check_inventory.py`, `gate_manifest.ps1`), the runner scaffolding with its self-tests, and the pinned test dependency. No QEMU harness, kernel case or language test.
@@ -71,7 +75,7 @@ Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M
 5. **No AI attribution, anywhere.** The only author and committer is the owner's identity above. No `Co-authored-by` trailers, "generated with" lines, tool or model names, session links or signature emoji. Turn off any automatic attribution before committing, and check `git log -1 --format="%an <%ae>%n%cn <%ce>%n%B"` after each commit.
 6. Commit message: `<task id>: <summary>`, with a body stating what was run and the result status. Never commit generated files.
 7. **Submitting for a gate**: clean worktree; report the exact full SHA of your tip. Any later commit makes earlier gate results void.
-8. Commit a review report only when the owner asks you to. An uncommitted report is cited by the commit it reviewed and by its SHA-256.
+8. Commit a review report only when the owner asks you to, following `docs/DECISIONS.md` §3.6. An uncommitted report is cited by the commit it reviewed and by its SHA-256. Committing a report records it; it is not approval of the documents, of a milestone or of any implementation work.
 
 ## 5. Honesty rules (non-negotiable)
 
@@ -90,7 +94,7 @@ Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M
 - For each new test, demonstrate once that it can fail.
 - Kernel tests: pass means host exit status 33 **and** the required serial lines, with **exactly one** `RESULT` line in the log (zero or two fail); expected-failure tests need host status 35 **and** their panic or `RESULT FAIL` lines. Host status 0, a timeout or missing output is a failure.
 - LLVM utilities are resolved by the name rule of `docs/AOS_KERNEL_SPEC.md` §2 (plain name, then `-18`); pass the resolved `CC` and `LD` to `make`.
-- Language goldens are written from Appendices A, B and C of `docs/AGAMLANG_SPEC.md`: B fixes variant, span and arguments for every catalogue row. If you have to guess a value, that is a finding, not a test.
+- Language goldens are written from §5.4 and Appendices A, B and C of `docs/AGAMLANG_SPEC.md`: §5.4 fixes which parse error is reported at every parser position, and B fixes variant, span and arguments for every catalogue row. If you have to guess a value, that is a finding, not a test.
 - In-kernel cases include only the test-facing headers of `docs/AOS_KERNEL_SPEC.md` §13.1; they raise faults with inline assembly and never use `int n` for an error-code vector.
 - **Required before stretch.** Double-fault, permission-fault and allocator invalid-argument tests are stretch; the review items that replace them (RV-K3-02, RV-K4-01) are mandatory.
 - Do not demand a particular internal design: test only what the specification makes normative.

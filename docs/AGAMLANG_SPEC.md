@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 4 — NOT APPROVED.** Corrects the points the second independent review left open: AR-11/AR-29 (literal limits), AR-30 (traversal budgets), AR-14/AR-31 (diagnostic and API contracts), AR-32 (`DECISIONS.md` §10). All are *addressed in draft — pending independent re-review*. No interpreter code may be written until the owner opens gate G-LANG. |
-| Date | 2026-11-12 (revision 4) |
+| Status | **Draft v0.1, revision 5 — NOT APPROVED.** A focused correction after the third independent review: AR-36, the remainder of AR-14 and AR-31 (parse errors at every parser position, §5.4; Appendix B.1, B.3, C.12–C.15). All are *addressed in draft — pending independent re-review* (`DECISIONS.md` §10.3). No interpreter code may be written until the owner opens gate G-LANG. |
+| Date | 2026-11-13 (revision 5) |
 | Location | Implementation in `agam-lang/` (Claude); tests in `agam-lang/tests/` (Codex) |
 | Owner decisions applied | Fusion default (O-07); indentation blocks (O-05); 0-based lists (O-06); cycles rejected (O-13); provisional limits (O-14); Python-compatible evaluation order (O-15); mixed else-if phrases (O-16) |
 | **Not approved** | All Hinglish keywords and all Hinglish message wording are **proposals pending the owner's review** (O-20, B-06, Q-07). Q-08 and Q-09 are open. |
@@ -279,7 +279,7 @@ primary        = NUMBER | TEXT | KW_TRUE | KW_FALSE | KW_NOTHING | IDENT
 
 ### 5.2 Parser rules
 
-- Hand-written recursive descent, one token of look-ahead, stops at the first error.
+- Hand-written recursive descent, one token of look-ahead, stops at the first error. **Which code is reported at which position is fixed by §5.4.**
 - `**` is right-associative and binds tighter than a unary minus on its left: `-2 ** 2` is `-(2 ** 2)`.
 - Comparisons do not chain: `1 < x < 10` is E0207.
 - A trailing comma is allowed only in a list literal, not in call arguments or parameters.
@@ -309,6 +309,57 @@ Nothing else adds a level: not a binary operator, a prefix operator, a compariso
 E0214 has no variant and no arguments. Like every parse error it is the first error in token order that stops the parser, and lexical errors come before any parse error. It is first in the precedence list of §5.2: at the first token of a block it is reported in place of any other code for that token. A token that the grammar does not accept where it stands is reported with its own code and is never counted as an opening bracket.
 
 **Boundaries.** A program exactly at the limit is valid: 100 nested bracket pairs, 100 nested blocks, or any mixture that adds up to 100. A statement inside 100 nested blocks cannot contain a bracket. 101 opening brackets that are never closed give E0214 at the 101st bracket, not E0205a, because the parser stops there. Worked boundaries are in Appendix C.11.
+
+### 5.4 Parse errors by position (normative; AR-36)
+
+The parser reads tokens in order and stops at the first one it cannot accept. This section fixes, for every position, which tokens are accepted and the one diagnostic for any other token. Spans and arguments are in Appendix B.3. Where two codes could apply to the same token, the order of §5.2 decides.
+
+**What the lexer guarantees (§4.2), and what follows for the parser:**
+
+- `INDENT` and `DEDENT` occur only at the start of a logical line. The parser therefore meets them only where a statement may start, or directly after the `COLON NEWLINE` of a block header.
+- Blank lines produce no token, and line breaks inside brackets produce no token. So the parser never meets `NEWLINE` where a statement must start, and the only `NEWLINE` it can meet while a bracket pair is open is the one the lexer adds at the end of the file.
+- `EOF` is preceded by `NEWLINE` or `DEDENT`, or is the only token of the program.
+
+**Rules that apply at every position:**
+
+| Token | Diagnostic |
+|---|---|
+| `RESERVED_WORD` | E0208 (case a of §5.2) |
+| `NEWLINE` while a bracket pair is open — the end of the file inside brackets | E0205a |
+| A closing bracket while the innermost open bracket is of the other kind | E0205b |
+| A comparison operator directly after a complete `comparison` | E0207 |
+
+**Positions:**
+
+| # | Position | Accepted | Any other token |
+|---|---|---|---|
+| 1 | Where a statement may start: at top level, or inside a block | The first token of a statement: `KW_SHOW`, `KW_RETURN`, `KW_STOP`, `KW_SKIP`, `KW_IF`, `KW_WHILE`, `KW_REPEAT`, `KW_FOR`, `KW_DEFINE`, or a token of row 2. `KW_ELIF` or `KW_ELSE`, directly after the block of the `if` or else-if branch they continue. `DEDENT`, inside a block. `EOF`, at top level. | `INDENT` → **E0203**. A keyword token directly followed by an assignment operator → E0208 (case c). `KW_RETURN` outside a function → E0209. `KW_STOP` or `KW_SKIP` outside a loop of the same function → E0210. Anything else → E0204, expected `a statement`. |
+| 2 | Where an expression must start: after a binary or prefix operator, after `**`, after an assignment operator, after the `(` of a parenthesised expression, after the `[` of an index, after a `,` in call arguments or in `show`, and after `KW_IF`, `KW_ELIF`, `KW_WHILE`, `KW_REPEAT`, `KW_IN` | `NUMBER`, `TEXT`, `KW_TRUE`, `KW_FALSE`, `KW_NOTHING`, `IDENT`, `LPAREN`, `LBRACKET`, `MINUS`, `KW_NOT` | E0204, expected `a value` |
+| 3 | Where an expression may start or the construct may end: after `KW_SHOW` or `KW_RETURN` (ended by `NEWLINE`); after the `(` of a call (ended by `RPAREN`); after the `[` of a list literal, or a `,` inside one (ended by `RBRACKET`) | A token of row 2, or the ending token named | E0204, expected `a value` |
+| 4 | After a complete expression. It continues if the next token is a binary operator, `**`, a comparison operator (when the expression is not yet a comparison), the `(` of a call or the `[` of an index. Otherwise the construct that holds the expression decides (rows 4a–4j). | — | — |
+| 4a | … a parenthesised expression | `RPAREN` | E0204, expected `")"` |
+| 4b | … a call argument | `COMMA`, `RPAREN` | E0204, expected `")"` |
+| 4c | … a list item | `COMMA`, `RBRACKET` | E0204, expected `"]"` |
+| 4d | … an index | `RBRACKET` | E0204, expected `"]"` |
+| 4e | … the condition of `if`, else-if or `while` | `COLON` | `ASSIGN` → E0206. Anything else → **E0201**. |
+| 4f | … the count of `repeat` | `KW_TIMES` | E0211 |
+| 4g | … the sequence of `for` | `COLON` | **E0201** |
+| 4h | … an item of `show` | `COMMA`, `NEWLINE` | E0204, expected `the end of the line` |
+| 4i | … the value of `return`, or the right side of an assignment | `NEWLINE` | E0204, expected `the end of the line` |
+| 4j | … an expression statement | `NEWLINE`; or an assignment operator, if the expression is a name or an index expression | An assignment operator after any other expression → E0212. Anything else → E0204, expected `the end of the line`. |
+| 5 | After `KW_ELSE`; after `KW_TIMES`; after the `RPAREN` that closes a definition's parameter list | `COLON` | **E0201** |
+| 6 | After the `COLON` of a header | `NEWLINE` followed by `INDENT` | E0202 |
+| 7 | After `KW_STOP` or `KW_SKIP` | `NEWLINE` | E0204, expected `the end of the line` |
+| 8 | Where a name is required: after `KW_FOR`; after `KW_DEFINE`; after the `(` of a parameter list (`RPAREN` is also accepted there); after a `,` in a parameter list | `IDENT` | A keyword token → E0208 (case b). Anything else → E0204, expected `a name`. |
+| 9 | After the loop variable of `for` | `KW_IN` | E0204, expected the `KW_IN` keyword in double quotes, named by §8.2 rule 7 |
+| 10 | After the function name in a definition | `LPAREN` | E0204, expected `"("` |
+| 11 | After a parameter | `COMMA`, `RPAREN` | E0204, expected `")"`. A parameter that repeats an earlier name is E0213, reported at that parameter. |
+
+**Complete headers.** A header is complete when the parser has accepted: the condition of `if`, else-if or `while`; the `KW_ELSE` token; the `KW_TIMES` token of `repeat`; the sequence expression of `for`; or the `RPAREN` that closes a definition's parameter list. E0201 is reported when the token after a complete header is not `COLON` and no earlier rule applies. Its span is zero-width after the last token of the header, and `{kw}` is the lexeme of the token that begins the header — for an else-if, the composed phrase as typed (§3.3).
+
+**Indentation.** An `INDENT` is accepted in one place only: directly after the `COLON NEWLINE` of a complete header (row 6), where it enters the block. Every other `INDENT` — on the first line of a program, after a simple statement at top level, or after a simple statement inside a block of any depth — is met at row 1 and is E0203, with the line's indentation as its span. Such an `INDENT` enters no block, so it is never E0214 (§5.3), however deep the nesting. Because it is the first token of its line, E0203 is reported whatever the rest of that line contains.
+
+**Structural tokens.** Of `NEWLINE`, `INDENT`, `DEDENT` and `EOF`, only `NEWLINE` can be the unexpected token of an E0204, and only while no bracket pair is open. `INDENT` is E0203 or enters a block. `DEDENT` and `EOF` are accepted wherever the lexer can produce them, except directly after a header's `COLON NEWLINE`, where the missing `INDENT` is E0202.
 
 ---
 
@@ -378,7 +429,7 @@ The `Program` node additionally carries `lang_counts` (§8.5).
 - `Program`: starts at line 1, column 1 and ends at the end of the last token; for a program with no tokens it is `[1, 1, 1, 1]`.
 - Branch tuples of `If` and parameter names are not nodes and have no span.
 
-A complete example is in Appendix C.9.
+A complete example is in Appendix C.10.
 
 ---
 
@@ -676,9 +727,9 @@ The span, the variant and every message argument of **each** catalogue row are f
 | E0106 | lex | Unknown escape sequence |
 | E0107 | lex | **Numeric** literal exceeds a limit |
 | E0108 | lex | Text literal longer than `MAX_ITEMS` |
-| E0201 | parse | Missing `:` after a block header |
+| E0201 | parse | Missing `:` after a complete block header: `if`, else-if, `else`, `while`, `repeat … times`, `for`, function definition (§5.4) |
 | E0202 | parse | Expected an indented block |
-| E0203 | parse | Unexpected indentation |
+| E0203 | parse | Indentation where no block starts: any `INDENT` that does not follow a block header (§5.4) |
 | E0204 | parse | Unexpected token (fallback) |
 | E0205 | parse | Bracket never closed (a) or closed with the wrong bracket (b) |
 | E0206 | parse | `=` where a comparison was expected |
@@ -816,7 +867,7 @@ Placeholders in braces are filled as Appendix B specifies. Codex derives its exp
 | E0108 | This text is too long. | Text can hold at most 1,000,000 characters. |
 | E0201 | I expected a colon ":" at the end of this line. | A line that starts with "{kw}" must end with ":". |
 | E0202 | I expected an indented block after this line. | Indent the next line to put it inside "{kw}". |
-| E0203 | This line is indented, but nothing above it starts a block. | Remove the extra spaces at the start of the line. |
+| E0203 | This line is indented more than it should be: no block starts here. | Remove the extra spaces at the start of the line. |
 | E0204 | I did not expect {found} here. | I expected {expected}. |
 | E0205a | This {open} is never closed. | Add the matching {close}. |
 | E0205b | I found {found}, but the {open} on line {line} needs {close}. | — |
@@ -877,7 +928,7 @@ The Hinglish forms of type names, kinds and expected-phrases are in Appendix B.2
 | E0108 | Yeh text bahut lamba hai. | Text mein zyada se zyada 1,000,000 character ho sakte hain. |
 | E0201 | Is line ke end mein ":" hona chahiye. | "{kw}" se shuru hone wali line ":" par khatam hoti hai. |
 | E0202 | Is line ke baad ek indented block hona chahiye. | Agli line ko indent kijiye taaki woh "{kw}" ke andar aaye. |
-| E0203 | Yeh line indented hai, par upar koi block shuru nahi hua. | Line ke shuru ke extra space hata dijiye. |
+| E0203 | Yeh line zaroorat se zyada indented hai: yahan koi block shuru nahi hota. | Line ke shuru ke extra space hata dijiye. |
 | E0204 | Yahan {found} ki ummeed nahi thi. | Yahan {expected} hona chahiye tha. |
 | E0205a | Yeh {open} kabhi band nahi hua. | Iske saath wala {close} lagaiye. |
 | E0205b | Yahan {found} mila, par line {line} ke {open} ke liye {close} chahiye. | — |
@@ -945,22 +996,22 @@ This appendix fixes, for every row of Appendix A, when it is used, what its span
 | `{open}`, `{close}` | The bracket character in double quotes: `"("`, `")"`, `"["`, `"]"` |
 | `{suggestion}` | The candidate's spelling, unchanged |
 
-**Rule F — `{found}`.** `IDENT`, keyword, `RESERVED_WORD`, operator or punctuation: the lexeme in double quotes. `NUMBER`: the B.2 phrase "the number", a space, the lexeme. `TEXT`: the B.2 phrase "the text", a space, the lexeme as typed with its quotes, cut to 30 code points followed by `...` if longer. `NEWLINE`: "the end of the line". `DEDENT`: "the end of the block". `EOF`: "the end of the program".
+**Rule F — `{found}`.** `IDENT`, keyword, operator or punctuation: the lexeme in double quotes. `NUMBER`: the B.2 phrase "the number", a space, the lexeme. `TEXT`: the B.2 phrase "the text", a space, the lexeme as typed with its quotes, cut to 30 code points followed by `...` if longer. `NEWLINE`: "the end of the line". By §5.4 no other structural token can be the unexpected token of an E0204: `INDENT` is always E0203 and so has no phrase, and a `RESERVED_WORD` is always E0208. The B.2 phrases for `DEDENT` ("the end of the block") and `EOF` ("the end of the program") are kept for a later version; they cannot occur in v0.1 and no test asserts them.
 
-**Rule X — `{expected}` in E0204.** Exactly one phrase per parser position:
+**Rule X — `{expected}` in E0204.** The phrase is fixed by the position at which the unexpected token stands, as listed row by row in §5.4. Exactly these phrases exist:
 
-| Position of the unexpected token | `{expected}` |
+| `{expected}` | Positions (rows of §5.4) |
 |---|---|
-| Where a statement must start | `a statement` |
-| Where an expression must start (after an operator, an assignment operator, `(`, `[`, `,`, or a keyword that is followed by an expression) | `a value` |
-| Where a name is required (function name, parameter, for-loop variable) and the token is not a keyword | `a name` |
-| After the function name in a definition | `"("` |
-| After a parameter, after a call argument, or after the expression inside parentheses | `")"` |
-| After an item of a list literal, or after an index expression | `"]"` |
-| After the loop variable of `for` | The `KW_IN` keyword in double quotes, named by §8.2 rule 7 (`"in"`, `"mein"`) |
-| After a complete simple statement | `the end of the line` |
+| `a statement` | 1 |
+| `a value` | 2, 3 |
+| `a name` | 8 |
+| `"("` | 10 |
+| `")"` | 4a, 4b, 11 |
+| `"]"` | 4c, 4d |
+| The `KW_IN` keyword in double quotes, named by §8.2 rule 7 (`"in"`, `"mein"`) | 9 |
+| `the end of the line` | 4h, 4i, 4j, 7 |
 
-A closing bracket with no open bracket is the last case. An `INDENT` where no block is open is E0203, not E0204.
+A closing bracket while no bracket pair is open is an ordinary unexpected token: it takes the phrase of the position where it stands.
 
 ### B.2 Language-dependent words
 
@@ -997,11 +1048,11 @@ A closing bracket with no open bracket is the last case. An `INDENT` where no bl
 | E0106 | §4.5 | The backslash and the character after it | `escape` |
 | E0107 | §4.4 | The whole literal | — |
 | E0108 | §4.5 | The opening quote character only | — |
-| E0201 | A block header's expression is complete and the next token is not `COLON` | Zero-width after the last token of the header | `kw`: the header's keyword |
+| E0201 | §5.4 rows 4e, 4g and 5: a header is complete (if, else-if, `else`, `while`, `repeat … times`, `for`, function definition) and the next token is not `COLON` | Zero-width after the last token of the header: the last token of the condition or sequence, the `KW_ELSE` token, the `KW_TIMES` token, or the closing `RPAREN` of the parameter list | `kw`: the lexeme of the token that begins the header |
 | E0202 | After a header's `COLON`, the next token is not `NEWLINE`, or the `NEWLINE` is not followed by `INDENT` | The `COLON` token | `kw`: the header's keyword |
-| E0203 | An `INDENT` where no block is open | The line's indentation | — |
-| E0204 | No more specific code applies (§5.2) | The unexpected token; zero-width at its position for `NEWLINE`, `DEDENT`, `EOF` | `found`, `expected` |
-| E0205a | End of file while `(` or `[` is open | The innermost open bracket | `open`, `close` |
+| E0203 | §5.4 row 1: an `INDENT` where a statement may start — any `INDENT` that does not directly follow a header's `COLON NEWLINE`, at top level or inside a block | The line's indentation | — |
+| E0204 | §5.4: the token is not accepted at its position and no other code is named there | The unexpected token; zero-width at its position for `NEWLINE` | `found` (Rule F), `expected` (Rule X) |
+| E0205a | The parser meets `NEWLINE` while a bracket pair is open; by §5.4 this is the end of the file inside brackets | The innermost open bracket | `open`, `close` |
 | E0205b | A closing bracket that does not match the innermost open bracket | The closing token | `found`, `open`, `close`, `line` (of the open bracket) |
 | E0206 | In the condition of `if`, else-if or `while`: an `ASSIGN` token directly after a complete expression | The `=` token | — |
 | E0207 | A second comparison operator directly after a complete comparison | The second operator | — |
@@ -1273,3 +1324,83 @@ A span array is written on one line; everything else uses two-space indentation.
 | The same with 41 nested bracket pairs | E0214 at the 41st opening bracket |
 | `1 + 1 + … + 1` with 1,000 `+` and no brackets | Accepted; operators add no level |
 | `a[0][0]…[0]` with 200 index operations one after another | Accepted; the pairs are side by side, each at level 1 |
+
+### C.12 Indentation inside a block where no block starts
+
+`n.agam`, run with `--messages en`. Line 3 is indented by eight spaces:
+
+```
+if true:
+    show 1
+        show 2
+```
+
+The lexer emits an `INDENT` before line 3. No header precedes it, so it is E0203 (§5.4 row 1); the span is the indentation, columns 1 to 8.
+
+```
+Error E0203 in n.agam, line 3:
+
+            show 2
+    ^^^^^^^^
+This line is indented more than it should be: no block starts here.
+Tip: Remove the extra spaces at the start of the line.
+```
+
+### C.13 Missing colon after `else`
+
+`e.agam`, run with `--messages en`:
+
+```
+if true:
+    show 1
+else
+    show 2
+```
+
+The header `else` is complete after its keyword (§5.4 row 5). The span is zero-width after `else`.
+
+```
+Error E0201 in e.agam, line 3:
+
+    else
+        ^
+I expected a colon ":" at the end of this line.
+Tip: A line that starts with "else" must end with ":".
+```
+
+### C.14 Missing colon after a function definition's parameter list
+
+`d.agam`, run with `--messages en`:
+
+```
+define add(a, b)
+    return a + b
+```
+
+The header is complete after the closing `)` (§5.4 row 5).
+
+```
+Error E0201 in d.agam, line 1:
+
+    define add(a, b)
+                    ^
+I expected a colon ":" at the end of this line.
+Tip: A line that starts with "define" must end with ":".
+```
+
+### C.15 Which parse error wins
+
+| Source situation | Result |
+|---|---|
+| The first line of a program is indented | E0203; the span is that indentation |
+| Inside 100 nested blocks, a line indented further than the simple statement before it | E0203, not E0214: no block is entered |
+| A header that opens a 101st block, whose first statement begins with a reserved word | E0214 at that word (§5.3); E0208 is not reported |
+| `else to:` after the block of an `if` (`to` is a reserved word) | E0208 at `to`; E0201 is not reported |
+| `if x = 1` with no colon | E0206 at `=` |
+| `repeat 3:` | E0211, zero-width after `3` |
+| `for x in items` with no colon | E0201, zero-width after `items`; `{kw}` is `for` |
+| `while x < 3 show x` | E0201, zero-width after `3`; `{kw}` is `while` |
+| `define f(a, b` followed by the end of the file | E0205a at `(` |
+| `else:` where no `if` or else-if block precedes it | E0204 at `else`: found `"else"`, expected `a statement` |
+| `show 1)` | E0204 at `)`: found `")"`, expected `the end of the line` |
+| `x = )` | E0204 at `)`: found `")"`, expected `a value` |

@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 4 — NOT APPROVED.** Corrects the roadmap side of the second independent review: AR-25, AR-26, AR-27 (bootstrap tools and M0 evidence) and the review items added for AR-28 (`DECISIONS.md` §10). All are *addressed in draft — pending independent re-review*. No gate is open. |
-| Date | 2026-11-12 (revision 4) |
+| Status | **Draft v0.1, revision 5 — NOT APPROVED.** A focused correction after the third independent review: the bootstrap side of AR-34, AR-35 and AR-37…AR-39 — the first `ACCEPTED` file, the attribute lines for byte-exact files, the cache rules and two more M0 evidence items (`DECISIONS.md` §10.3). All are *addressed in draft — pending independent re-review*. No gate is open. |
+| Date | 2026-11-13 (revision 5) |
 | Paths | Relative to the repository root |
-| Branches | `main`, `agent/claude`, `agent/codex`, `review/architecture-v0.1` (read from the repository's own files on 2026-11-12; revision 3 is commit `fd2670d` on the last two), plus temporary `gate/<milestone>` branches (O-17) |
+| Branches | `main`, `agent/claude`, `agent/codex`, `review/architecture-v0.1` (read from the repository's own files on 2026-11-13; revision 4 is commit `cbf2cff` on `review/architecture-v0.1`; `agent/codex` is still at revision 3, `fd2670d`), plus temporary `gate/<milestone>` branches (O-17) |
 | Test IDs | Defined once, in `TEST_PLAN.md` §5–§6. This document names them; it does not restate their pass conditions. |
 
 Nothing below has been run. `git` commands are run by the owner with Git for Windows; `sh`, `make` and `python3` run in WSL2 Ubuntu 24.04 from `/mnt/d/Agam-Computing/<worktree>`.
@@ -41,7 +41,7 @@ Completing M0 is a prerequisite of G-AOS and G-LANG; it opens neither.
 
 | | |
 |---|---|
-| **Prerequisites** | Revision 4 re-reviewed with no Critical or Major finding open against the process sections (blocker B-07); the owner has put the approved documents on `main` (B-04); the owner opens G-BOOT. |
+| **Prerequisites** | Revision 5 re-reviewed with no Critical or Major finding open against the process sections (blocker B-07); the owner has put the approved documents on `main` (B-04); the owner opens G-BOOT. |
 | **Purpose** | Replace assumptions about the machine with recorded evidence, and create the verification tools that later gates rely on. |
 
 ### 2.2 Deliverables (the complete permitted scope)
@@ -51,24 +51,43 @@ Completing M0 is a prerequisite of G-AOS and G-LANG; it opens neither.
 | M0-O1 | Owner | WSL2 packages: `sudo apt install build-essential clang lld llvm make xorriso qemu-system-x86 gdb curl xz-utils python3 python3-venv python3-pip ovmf`. `build-essential` provides `cc`; `curl` (or `wget`) and `xz-utils` are needed by the fetch script. The K1 static tests need `llvm-objdump`, `llvm-readelf` and `llvm-nm`: the second review did not find them under their plain names, and the owner reports them present under the `-18` names, which `AOS_KERNEL_SPEC.md` §2 accepts — so the `llvm` package is optional if `llvm-18` is already installed. |
 | M0-O2 | Owner | Python environment for later language tests, outside the repository: `python3 -m venv ~/.venvs/agam`, then `~/.venvs/agam/bin/pip install -r agam-lang/tests/requirements-dev.txt` |
 | M0-O3 | Owner | Confirm the Git identity of O-18 with Git for Windows; switch off automatic attribution in each AI tool. No configuration is changed by an agent. |
-| M0-A1 | Architect, committed by the owner **before any agent work** | `.gitattributes` (`* text=auto eol=lf`), `.gitignore` (`agam-os/build/`, `.gate/`, `__pycache__/`, `.pytest_cache/`), `VERSION`, `README.md`. Each worktree's files are then re-written from the index so they have LF endings (E-M0-03 checks the result). |
+| M0-A1 | Architect and owner, committed by the owner **before any agent work** | `.gitattributes` with exactly the content shown below this table (a `.gitattributes` already exists, committed by the owner with revision 4; this step amends it); `.gitignore` (`agam-os/build/`, `.gate/`, `__pycache__/`, `.pytest_cache/`, `/Claude outputs/`); `VERSION`; `README.md`; and, by the owner, **`agam-dev/gates/ACCEPTED` as an empty file of 0 bytes** (`TEST_PLAN.md` §4.2). Each worktree's files are then re-written from the index so that every active text file has LF endings (E-M0-03 checks the result). Ignoring a cache directory keeps `git status` quiet in the agent worktrees; it does not permit a cache during a gate run (`TEST_PLAN.md` §4.6). |
 | M0-X1 | Codex | `agam-dev/verify/check_env.sh`: prints name, path and version of every tool of `AOS_KERNEL_SPEC.md` §2; accepts `curl` or `wget`; exits non-zero if a required tool is missing; `--brief` prints one line; **never runs git**. The Git for Windows version is reported separately by the owner (E-M0-05). |
 | M0-X2 | Codex | **Gate tools**, all Git-free: `agam-dev/verify/check_ownership.py` (manifests, merge, record commit; `TEST_PLAN.md` §8.3), `agam-dev/verify/check_inventory.py` (catalogue and summary against the inventory; §8.4), and `agam-dev/verify/gate_manifest.ps1` (byte-exact captures with read-only git commands) |
 | M0-X3 | Codex | **Runner scaffolding**: `agam-dev/verify/run.py` with catalogue loading, the inventory self-check, selection by gate, the result accounting and exit rules of `TEST_PLAN.md` §4.4, the binding and untracked-input checks of §4.6, the `m0` suite, and its self-tests; `agam-dev/verify/catalogue.json` with the `m0` entries. No QEMU harness and no kernel or language test. |
 | M0-X4 | Codex | `agam-lang/tests/requirements-dev.txt` with one exact `pytest` version; `agam-dev/verify/README.md` |
 | M0-X5 | Codex | `agam-dev/reports/codex/M0-evidence.md` |
+| M0-X6 | Codex, only as already committed under O-31 | The archived review material of the byte-exact set (`TEST_PLAN.md` §4.9): review reports, their evidence folders and proposals 001–003. It is **not bootstrap work** and is listed here only so that the M0 manifest check accepts these paths. No file of it may differ from the commit made under O-31. |
 | M0-C1 | Claude | `agam-os/third_party/limine/PIN`, `agam-os/third_party/limine-protocol/PIN` and the vendored `limine.h`, with the values of `DECISIONS.md` §8.1; `agam-os/tools/fetch-limine.sh` (the only script that uses the network; builds the host utility with `cc`) |
 | M0-C2 | Claude | `agam-os/Makefile` skeleton with `check-env`, `print-flags`, `fetch`, `clean`, `distclean` only — no `test` target yet |
 | M0-C3 | Claude | `agam-dev/reports/claude/M0.md`; and `agam-dev/reports/claude/M0-verify-review.md`, Claude Code's read-only reading of Codex's gate tools and runner for RV-M0-01 (O-26), naming the Codex tip it read and committed before Claude Code reports its own tip |
 
+**`.gitattributes` required by M0-A1** (AR-39). The `-text` lines must come last, because for each path the last matching line wins:
+
+```
+# Active text files: stored with LF in the repository and checked out with LF.
+* text=auto eol=lf
+
+# Byte-exact files: never converted. Gate records and archived review material.
+# These lines must stay last: for each path the last matching line wins.
+agam-dev/gates/** -text
+agam-dev/reports/codex/ARCHITECTURE_REVIEW*.md -text
+agam-dev/reports/codex/architecture-review*-evidence/** -text
+agam-dev/reports/codex/proposals/00[1-3]-*.md -text
+```
+
+With the first rule Git decides for each file whether it is text; a text file is stored with LF and checked out with LF. A file that Git recognises as binary is left alone, but that recognition is a heuristic, which is why the byte-exact files are named explicitly.
+
+The file committed with revision 4 begins with `* text=auto` and then lists `eol=lf` for some extensions. Under it, a text file with any other name — `.gitattributes` itself, `VERSION`, a `PIN` file, a `.json` fixture, an `.agam` program — is checked out with whatever line ending the local Git settings select, which is CRLF under the usual Git for Windows setting; the working copies of `.gitattributes` and `README.md` in the integration worktree have CRLF today. The first line above closes that gap. The owner's per-extension lines may stay, provided they stand **before** the `-text` lines. The four `-text` lines are the byte-exact set of `TEST_PLAN.md` §4.9: gate records and the archived review material. Nothing in that set may be committed on a branch until these lines are in that branch's `.gitattributes`; otherwise Git would normalise CRLF evidence and its cited hashes would no longer match. The owner may commit this `.gitattributes` content before M0, together with a document revision, as happened with the first version; that is the owner's metadata change, needs no gate and opens none, and E-M0-03 checks its result at M0. The plan for committing the archived material is `DECISIONS.md` §3.6 (O-31).
+
 ### 2.3 Verification
 
-The gate procedure of `TEST_PLAN.md` §8 with `<M>` = `M0`, under **the M0 exception of §8.6**: no trusted tools exist yet, so the owner's complete by-hand check (E-M0-07, E-M0-08) and two independent readings of the new tools, by the architect and by Claude Code (RV-M0-01; O-26), take their place. In WSL2: `python3 agam-dev/verify/run.py gate M0`. The tools created here become the trusted tools of the K1 gate, where the protection is demonstrated once (E-K1-02).
+The gate procedure of `TEST_PLAN.md` §8 with `<M>` = `M0`, under **the M0 exception of §8.6**: no trusted tools exist yet, so the owner's complete by-hand checks (E-M0-07, E-M0-08, E-M0-09) and two independent readings of the new tools, by the architect and by Claude Code (RV-M0-01; O-26), take their place. `BASE` of the M0 gate is `main` after the owner has committed M0-A1, so the metadata files and the empty `ACCEPTED` are in it and in no agent's manifest. In WSL2 the run is `run.py gate M0`, started exactly as `TEST_PLAN.md` §8.2 step 8 prescribes. The tools created here become the trusted tools of the K1 gate, where the protection is demonstrated once (E-K1-02).
 
 ### 2.4 Acceptance criteria
 
 1. `run.py gate M0` exits 0: required tests T-M0-01…07 all pass, none skipped or missing.
-2. Manual evidence E-M0-01…08 is filed, and review item RV-M0-01 is answered with no Critical or Major finding open.
+2. Manual evidence E-M0-01…10 is filed, and review item RV-M0-01 is answered with no Critical or Major finding open.
 3. The tool versions (E-M0-04) match `DECISIONS.md` §8.2, or each difference is accepted by the owner; every required command is present, the LLVM tools under either accepted name (`AOS_KERNEL_SPEC.md` §2). This clears B-01.
 4. The owner has recorded a disposition for the Limine pin evidence (E-M0-06; B-02).
 5. No file outside §2.2 was added or changed.
@@ -81,7 +100,7 @@ All of these are implementation-level verification (`TEST_PLAN.md` §2.5): none 
 
 ## 3. Sprint 1 — AOS (target: Days 1–5)
 
-Verification for every K-milestone is the gate procedure of `TEST_PLAN.md` §8, with `python3 agam-dev/verify/run.py gate <milestone>` in step 7. The suites that run are fixed by `TEST_PLAN.md` §4.2.
+Verification for every K-milestone is the gate procedure of `TEST_PLAN.md` §8, with `run.py gate <milestone>` in step 8, started as that step prescribes. The suites that run are fixed by `TEST_PLAN.md` §4.2.
 
 ### K1 — Boot to kernel entry (Day 1)
 
@@ -202,7 +221,7 @@ Verification for every K-milestone is the gate procedure of `TEST_PLAN.md` §8, 
 
 ## 4. Sprint 2 — AgamLang v0.1 (proposed Days 6–10)
 
-Verification for every L-milestone is the gate procedure with `run.py gate <milestone>`. Language tests run with `PYTHONPATH=agam-lang/src` inside the environment of M0-O2.
+Verification for every L-milestone is the gate procedure with `run.py gate <milestone>`. Language tests run with `PYTHONPATH=agam-lang/src` inside the environment of M0-O2, under the cache rules of `TEST_PLAN.md` §4.6 and §8.2 step 8: no bytecode cache in the tree, bytecode writing off, an empty cache prefix outside the tree, and `pytest` without its cache plugin.
 
 | | L1 | L2 | L3 | L4 | L5 |
 |---|---|---|---|---|---|
@@ -278,7 +297,7 @@ Likelihood and impact are the architect's judgement (L, M, H), not measurements.
 |---|---|---|---|---|---|
 | R-01 | Host environment incomplete or different from the record | M | H | M0; versions recorded in every report | T-M0-01, E-M0-04 |
 | R-02 | Git run from WSL sees the Windows worktrees as prunable and could delete their registrations | H | H | Git only with Git for Windows; no tool in WSL calls git | E-M0-05; rules |
-| R-03 | CRLF line endings. Files are currently checked out with CRLF in the agent worktrees. CRLF **can** break shell scripts (for example the interpreter line and line continuations), Makefile recipes and byte-exact golden files; not every script fails, which makes the failures hard to spot. | H | M | `.gitattributes` is the first bootstrap change; the binding check hashes file contents | T-M0-03, E-M0-03 |
+| R-03 | CRLF line endings. Files are currently checked out with CRLF in the agent worktrees. CRLF **can** break shell scripts (for example the interpreter line and line continuations), Makefile recipes and byte-exact golden files; not every script fails, which makes the failures hard to spot. The opposite risk also exists: normalising archived evidence changes its bytes. | H | M | `.gitattributes` is the first bootstrap change: LF for the active text set, no conversion for the byte-exact set (`TEST_PLAN.md` §4.9); the binding check hashes file contents | T-M0-03, E-M0-03 |
 | R-04 | Limine release or protocol details differ at run time from what was read | M | H | Pin by hash; identity and pairing independently reproduced; boot compatibility checked at K1 (V-14) | K1 |
 | R-05 | Faults before the IDT exists appear only as a reset | H | M | Serial first; `-no-reboot`; `cpu_reset` log; host status 0 is a failure | Harness |
 | R-06 | Descriptor, frame or alignment errors | M | H | Static assertions; review items RV-K2-01, RV-K3-01; register-value tests | K2, K3 |
@@ -304,6 +323,8 @@ Likelihood and impact are the architect's judgement (L, M, H), not measurements.
 | R-26 | A branch under test weakens a tool that checks it, or removes a required test from the catalogue | M | H | Checkers and the inventory are exported from `BASE` to a directory outside every worktree; the inventory lives in the architecture documents; changes to `agam-dev/verify/` need two independent readings, by the architect and by Claude Code (O-26); for M0 the owner checks by hand | `TEST_PLAN.md` §8.1, §8.4, §8.6; E-K1-02 |
 | R-27 | The debugger port is reachable from the network | L | M | `make debug` binds to `127.0.0.1` only | RV-K1-01 |
 | R-28 | The candidate runner misreports a test it did not really run | L | H | Not mechanically excluded. Two independent readings, by the architect and by Claude Code, of every verification-path change; architect's spot checks; kernel tests leave serial logs and host statuses as artefacts | `RV-<milestone>-VP`; reviews |
+| R-29 | A stale or planted bytecode cache, or leftover build output, makes a gate run execute bytes that are in no tree | M | H | Caches and build output are removed, and the interpreter settings fixed, with system tools before any candidate code runs; the runner refuses to run otherwise; caches are no longer a permitted output location | `TEST_PLAN.md` §4.6, §8.2 step 8; T-M0-04 (k), (l), (n); E-M0-10 |
+| R-30 | The gate record archives something other than what was judged, or `ACCEPTED` is changed beyond one appended line | L | H | The record check receives the judged files and the old `ACCEPTED` content, ties each to a blob ID of the raw record, and re-judges the archived summary | `TEST_PLAN.md` §8.3; T-M0-05; E-M0-09 |
 
 ---
 

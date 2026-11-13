@@ -1,6 +1,6 @@
 # CLAUDE.md — Operating rules for Claude Code
 
-> **Status: Draft v0.1, revision 4 — NOT APPROVED.** Every gate is closed (`docs/DECISIONS.md` §1). Do not write kernel, interpreter, build or test code. Reading and planning are allowed.
+> **Status: Draft v0.1, revision 5 — NOT APPROVED.** Every gate is closed (`docs/DECISIONS.md` §1). Do not write kernel, interpreter, build or test code. Reading and planning are allowed.
 
 You are the **implementation agent** for the Agam Computing Ecosystem. Codex is the independent **test and review agent**. The architect maintains `docs/`. The project owner approves everything and alone controls `main`, tags and GitHub.
 
@@ -45,6 +45,8 @@ agam-os/tests/**  agam-lang/tests/**  agam-dev/verify/**  agam-dev/reports/codex
 
 This covers additions, changes, deletions and both sides of a rename. Every file you add has mode `100644`; no symbolic links or submodules. If a test looks wrong, do not change it and do not bend your code to satisfy it: file a proposal.
 
+The folder `Claude outputs` in your worktree is kept by the owner's decision (O-31, `docs/DECISIONS.md` §3.6). Do not delete, move, edit or commit it, and never copy it into another worktree.
+
 The list of tests that must pass is `docs/TEST_PLAN.md` Appendix A. It is part of the architecture documents; neither agent can change it, and a catalogue that differs from it fails the gate.
 
 Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M0-C*` items of `docs/ROADMAP.md` §2.2 are allowed.
@@ -64,7 +66,7 @@ Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M
 3. **Never touch `main` or any `gate/*` branch**: no commit, merge, rebase, reset, tag or push. Take changes with `git merge main`, at the start of a milestone.
 4. **Never push.** Never force-push or rewrite history.
 5. **No AI attribution, anywhere.** The only author and committer is the owner's identity above. No `Co-authored-by` trailers, "generated with" lines, tool or model names, session links or signature emoji — in commit messages, tags, pull-request text, file headers or comments. Turn off any automatic attribution in your tool before committing. After each commit check `git log -1 --format="%an <%ae>%n%cn <%ce>%n%B"` and fix the commit at once if it is wrong.
-6. Commit message: `<task id>: <summary>`, then a body with the status (`UNVERIFIED`, `BUILD-VERIFIED` or `TEST-VERIFIED`) and the command that supports it. Never commit generated files (`agam-os/build/`, `.gate/`).
+6. Commit message: `<task id>: <summary>`, then a body with the status (`UNVERIFIED`, `BUILD-VERIFIED` or `TEST-VERIFIED`) and the command that supports it. Never commit generated files (`agam-os/build/`, `.gate/`, `__pycache__/`, `.pytest_cache/`, `*.pyc`).
 7. **Submitting for a gate**: your worktree must be clean (`git status --porcelain=v1 --untracked-files=all` prints nothing). Report the exact full SHA of your tip (`git rev-parse HEAD`). Any later commit makes earlier gate results void; say so if you add one.
 8. You may check your own changes before submitting: on Windows, `git diff --raw -z --no-abbrev --no-renames --output=<file> main...HEAD`, then `python agam-dev/verify/check_ownership.py --agent claude --manifest <file>`. This is a convenience. The owner's gate check is the one that counts, and it runs the checkers from a read-only copy exported from the milestone's baseline, never from your branch (`docs/TEST_PLAN.md` §8.1).
 
@@ -97,6 +99,7 @@ Create `agam-dev/reports/claude/proposals/<nnn>-<slug>.md` with the spec section
 
 - Modular monolithic kernel. Only the headers of spec §13.1, the formats of §12, the make targets of §11.1 and the hardware encodings are fixed.
 - C17, freestanding, Clang/LLD; C and assembly flag sets exactly as in §2. No x87, MMX, SSE or AVX; no red zone. LLVM tools may be installed under plain or `-18` names (§2); keep `CC` and `LD` overridable (§11.1).
+- Nothing you build may depend on a file that is not in the tree: a gate run starts with no bytecode cache and no build output except the verified download cache (`docs/TEST_PLAN.md` §4.6).
 - Limine 12.9.6, base revision 6; constants only from the vendored `limine.h`; `agam-os/tools/fetch-limine.sh` is the only place that uses the network.
 - Follow the memory ownership table (§4.4), the consistency checklist (§4.5) and the request table (§3.3). Require NX at boot.
 - Serial first. Log, panic, dump and test-protocol lines match §12 character for character.
@@ -114,6 +117,7 @@ Create `agam-dev/reports/claude/proposals/<nnn>-<slug>.md` with the spec section
 - Limits are properties of values, not of your traversal (§7.1): the outcome of a comparison, a display or a list assignment must not depend on visiting order, early exit or caching. Literal limits have fixed codes and stages: E0107 numeric, E0108 text (lexer), E0408 list literal (before any item is evaluated). The cycle rule uses no limit (§7.8).
 - Source nesting is exact: open blocks plus open bracket pairs, at most 100, checked when a bracket is consumed or a block is entered, and reported as E0214 (§5.3). Operators add no level; a statement with up to 1,000 operations must work (§7.10). Neither may end in a host recursion failure.
 - Evaluation order is Python-compatible and observable (§7.3).
+- Parse errors are fixed position by position in §5.4: one diagnostic for every token the parser cannot accept. An `INDENT` that does not follow a block header is always E0203; a missing colon after any complete header — `else` and a function definition included — is E0201.
 - Every user-visible failure is an `AgamError` with a `Diagnostic`. No traceback, no `eval`/`exec`, no bare `except`. Variant, span and every message argument are fixed row by row in Appendix B; node spans in §6.5; the public functions take plain Python values (§10).
 - E0900 is reachable only through the in-process `_fault` parameter of `agamlang.cli.main`. Do not add a command-line option, environment variable or configuration switch for it.
 

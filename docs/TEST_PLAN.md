@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 4 — NOT APPROVED.** Corrects the points the second independent review left open: AR-02/AR-25 (checker provenance), AR-26 (required-test completeness), AR-27 (freshness and promotion), and the test side of AR-28…AR-31 (`DECISIONS.md` §10). All are *addressed in draft — pending independent re-review*. |
-| Date | 2026-11-12 (revision 4) |
+| Status | **Draft v0.1, revision 5 — NOT APPROVED.** A focused correction after the third independent review: AR-34 (record verification inputs), AR-35 (bytecode caches and other unbound inputs), AR-37 (first `ACCEPTED` state), AR-38 and AR-39 (preserved material, line endings), and the test side of AR-36 (`DECISIONS.md` §10.3). All are *addressed in draft — pending independent re-review*. |
+| Date | 2026-11-13 (revision 5) |
 | Codex owns | `agam-os/tests/**`, `agam-lang/tests/**`, `agam-dev/verify/**`, `agam-dev/reports/codex/**` |
 | Paths | Relative to the repository root |
 
@@ -154,6 +154,8 @@ Every test has an ID, a suite, a **class** and a **mode**:
 
 **Cross-track regression:** the gate also runs the suites of every milestone listed in `agam-dev/gates/ACCEPTED` (one milestone ID per line, maintained by the owner). So once L2 is accepted, a K-gate also runs `l1` and `l2`, and the reverse. Suites of milestones that are neither the target nor accepted are **outside** the run: they are not selected and not reported as skipped.
 
+**`ACCEPTED` always exists (AR-37).** The owner creates `agam-dev/gates/ACCEPTED` as an **empty file (0 bytes)** in the pre-agent baseline (`ROADMAP.md` M0-A1), so it is part of every `BASE` and of every tree the runner checks, including the first M0 attempt. An empty file means that no milestone has been accepted. A missing file is exit status 2; it is never read as an empty history. Format: one milestone ID per line, every line ended by LF, no blank line, no duplicate. Only the record commit of a gate changes it (§8.3).
+
 ### 4.3 Commands
 
 ```
@@ -164,6 +166,7 @@ python3 agam-dev/verify/run.py dev <suite>... [--only TEST_ID] [--stretch]
 - `gate` selects every required test of §4.2 and requires the binding files of §4.6. It is the only command whose result counts for acceptance.
 - `dev` is for an agent's own worktree. Its summary starts with `DEV RUN — not acceptance evidence`.
 - `make -C agam-os test MILESTONE=<id>` is a convenience that calls `gate`.
+- A `gate` run counts only when it is started as §8.2 step 8 prescribes: caches and build output removed first, and the interpreter options given on the command line. Started any other way, the runner refuses to run (§4.6 checks 4–6).
 - `--matrix` and `--repeat` exist only from K5 (suite `k5` uses them internally).
 
 ### 4.4 Result accounting and exit status (normative)
@@ -199,8 +202,27 @@ Before running any test, the runner does the following without Git. Any failure 
 
 1. **Binding file**: the SHA-256 of `tree.lst` equals the value in `gate.json`.
 2. **Tracked content**: for every entry of `tree.lst`, the file exists, its blob ID recomputed from the working tree (SHA-1 of `blob <size>\0<content>`) equals the listed one, and the listed mode is `100644`. This also catches CRLF conversion.
-3. **No untracked inputs**: every file in the working tree (outside `.git`) is either listed in `tree.lst` or lies in a **permitted output location**: `agam-os/build/`, `.gate/`, a `__pycache__/` directory, or `.pytest_cache/`. Any other file — an untracked source, header, test, module or report — fails the run.
-4. **Clean outputs**: `agam-os/build/` is removed except `agam-os/build/cache/`, whose downloads are re-verified by hash before use (T-M0-02).
+3. **No untracked inputs**: every file in the working tree (outside `.git`) is either listed in `tree.lst` or lies in a **permitted output location**: `agam-os/build/` or `.gate/`. Any other file fails the run — an untracked source, header, test, module or report, a bytecode cache, or a file that an ignore rule hides from `git status`. Ignore rules play no part in this check.
+4. **No bytecode caches**: no directory named `__pycache__` or `.pytest_cache`, and no file matching `*.pyc` or `*.pyo`, exists anywhere in the working tree, the permitted output locations included.
+5. **Interpreter settings**: `sys.dont_write_bytecode` is true, and `sys.pycache_prefix` names an existing, empty directory outside the working tree.
+6. **Outputs start empty**: `agam-os/build/` contains nothing except `agam-os/build/cache/`, and that directory contains only the downloaded files named in a `PIN` file, each re-verified against its pinned SHA-256 before use (T-M0-02). Of `.gate/`, the runner reads only `gate.json` and `tree.lst`.
+
+The runner gives every Python child process the options `-B` and `-X pycache_prefix=<that directory>` **on its command line**, and every `pytest` process `-p no:cacheprovider` as well. It does not rely on environment variables for this: `-E` and `-I` make Python ignore every `PYTHON*` variable.
+
+**Why caches are inputs, not outputs (AR-35).** Python executes a `.pyc` file in place of the source in three cases: a timestamp cache whose recorded size and modification time match the source file; an *unchecked* hash-based cache, which Python uses without looking at the source at all; and a `.pyc` that lies beside the sources where no source file of that name exists. Only a *checked* hash-based cache is compared with the content of the source. `pytest` keeps its own rewritten copies of test modules in the same `__pycache__` directories and reuses them under the timestamp rule, so a stale one can make a failing test pass. A stale or planted cache can therefore run bytes that are in no tree while every tracked file still matches `tree.lst`.
+
+**What each setting does, and does not do:**
+
+| Setting | Effect | Limit |
+|---|---|---|
+| `-B`, `PYTHONDONTWRITEBYTECODE`, `sys.dont_write_bytecode` | Python and `pytest` write no `.pyc` file | **Existing caches are still read and executed.** On its own this setting protects nothing. |
+| `-X pycache_prefix=DIR`, `PYTHONPYCACHEPREFIX`, `sys.pycache_prefix` | Python and `pytest` read and write caches only under `DIR`, and ignore every `__pycache__` directory in the source tree | A `.pyc` beside the sources with no source file is still importable. A `DIR` that is not empty is itself a cache that is read. |
+| `-p no:cacheprovider` | `pytest` neither reads nor writes `.pytest_cache`, its record of earlier runs | Does not concern bytecode |
+| `-E`, `-I` | — | Make Python ignore `PYTHONDONTWRITEBYTECODE` and `PYTHONPYCACHEPREFIX`; the command-line options still apply |
+
+The rule that follows has three parts, and none replaces another: **absence** — no cache and no sourceless `.pyc` in the tree (step 8a, check 4); **an empty prefix outside the tree** — so that no cache exists to be read (check 5); **no writing** — so that the prefix is still empty afterwards, which step 8c confirms. Checks 3–6 are made by the candidate runner and are a second line only. The first line is the owner's launch procedure (§8.2 step 8a), carried out with system tools **before any candidate Python code is imported**.
+
+**Which worktree (AR-38).** These checks apply to the worktree in which `run.py gate` runs: the integration worktree, `D:\Agam-Computing\ecosystem`. Material that exists only in an agent's worktree is outside them; what the agent worktrees must satisfy is a clean `git status` when a tip is reported (§8.1). An ignore rule can satisfy that second rule. It cannot satisfy check 3: an ignored file that appears in the integration worktree fails the run.
 
 **What this proves and what it does not.** Steps 1–3 prove that the files on disk are exactly the listed tree and nothing else. They do **not** prove which commit or branch that tree belongs to, that `gate.json` tells the truth about the refs, or that a ref has not moved since. Commit and ref freshness are established only by the live checks the owner makes with Git for Windows (§8.2 steps 0, 8 and 10).
 
@@ -223,6 +245,25 @@ Within one runner invocation each image is built at most once and cached by case
 
 `agam-os/tests/harness/aosdump.py` parses the formats of `AOS_KERNEL_SPEC.md` §12. A line that deviates from a normative format is itself a failure.
 
+### 4.9 Active text files and byte-exact files (normative; AR-39)
+
+Every tracked file belongs to exactly one of two sets.
+
+- **Byte-exact set**: files that must keep the bytes they were created with — gate records and archived review evidence. They are the paths matched by the four patterns below, which `.gitattributes` marks `-text` (`ROADMAP.md` §2.2). Git never converts them; they may contain NUL bytes or CRLF; the SHA-256 values cited for them stay valid.
+
+  ```
+  agam-dev/gates/**
+  agam-dev/reports/codex/ARCHITECTURE_REVIEW*.md
+  agam-dev/reports/codex/architecture-review*-evidence/**
+  agam-dev/reports/codex/proposals/00[1-3]-*.md
+  ```
+
+- **Active text set**: every other tracked file. These are stored and checked out with LF, and a carriage-return byte in one of them is an error.
+
+Both sets are bound in the same way: the blob ID recomputed from the working tree must equal the one in `tree.lst` (§4.6 check 2). Only the line-ending rules — T-M0-03 and E-M0-03 — are limited to the active text set. Extending the byte-exact set is a change to this section and to `.gitattributes`, made by the architect and committed by the owner; an agent cannot do it.
+
+Committing a file of the byte-exact set preserves a record. It is not acceptance of anything: it approves no document, closes no finding, clears no blocker and opens no gate (`DECISIONS.md` §3.6).
+
 ---
 
 ## 5. AOS test catalogue
@@ -235,9 +276,9 @@ Class is `required` unless marked **stretch** or **optional**. Expected host sta
 |---|---|---|---|
 | T-M0-01 | env_tools | `sh agam-dev/verify/check_env.sh` | Exit 0; every tool of `AOS_KERNEL_SPEC.md` §2 reported with path and version; the script runs no `git` |
 | T-M0-02 | pin_fetch | `sh agam-os/tools/fetch-limine.sh` twice | Asset and header SHA-256 equal the PIN files; second run reports already verified; the files of spec §11.2 exist |
-| T-M0-03 | tree_integrity | Binding check of §4.6, plus a scan of every listed file | Blob IDs and modes match; no carriage-return byte in any tracked text file |
-| T-M0-04 | runner_selftest | The runner executed on synthetic catalogues and inventories | (a) all pass → 0; (b) a required `SKIP` → 1; (c) a required `MISSING` → 1; (d) empty required selection → 1; (e) a stretch `FAIL` → 0 and reported; (f) tree differs from `tree.lst` → 2; (g) a suite outside §4.2's set is not selected; (h) `tree.lst` hash differs from `gate.json` → 2; (i) an unlisted file outside the permitted output locations → 2; (j) catalogue differs from the inventory → 2 |
-| T-M0-05 | ownership_selftest | `check_ownership.py` (§8.3) on synthetic manifests | Accepts valid manifests, including a deletion (zero new mode and blob); rejects a foreign path, a rename into a foreign path (seen as delete plus add), a mode other than `100644`, a symlink or submodule entry, a type change, overlapping manifests, and a merge manifest that differs from the union in path, blob or mode. `--verify-record` accepts the exact record delta and rejects any other path, a modified existing record file, and an `ACCEPTED` change other than one appended line. |
+| T-M0-03 | tree_integrity | Binding check of §4.6, plus a scan of every listed file | Blob IDs and modes match for every tracked file; no carriage-return byte in any tracked file of the active text set (§4.9) |
+| T-M0-04 | runner_selftest | The runner executed on synthetic catalogues, inventories and trees | (a) all pass → 0; (b) a required `SKIP` → 1; (c) a required `MISSING` → 1; (d) empty required selection → 1; (e) a stretch `FAIL` → 0 and reported; (f) tree differs from `tree.lst` → 2; (g) a suite outside §4.2's set is not selected; (h) `tree.lst` hash differs from `gate.json` → 2; (i) an unlisted file outside the permitted output locations → 2, also when an ignore rule covers it; (j) catalogue differs from the inventory → 2; (k) a `__pycache__` directory, a `.pytest_cache` directory or a `.pyc` file anywhere in the tree → 2; (l) started with bytecode writing enabled, or without an empty cache prefix outside the tree → 2; (m) `agam-dev/gates/ACCEPTED` missing → 2, and an empty one read as no accepted milestone; (n) a file under `agam-os/build/` outside `cache/` at the start → 2; (o) every Python child process the runner starts has both settings, also when the two environment variables are unset |
+| T-M0-05 | ownership_selftest | `check_ownership.py` (§8.3) on synthetic manifests and record inputs | Accepts valid manifests, including a deletion (zero new mode and blob); rejects a foreign path, a rename into a foreign path (seen as delete plus add), a mode other than `100644`, a symlink or submodule entry, a type change, overlapping manifests, and a merge manifest that differs from the union in path, blob or mode. `--verify-record` accepts the exact record delta with its judged directory, for a first record (empty old `ACCEPTED`) and a later one; it rejects: any other path; a missing required file; an extra file in the record directory; `tools-reading-architect.md` missing when required or present when not; an archived file whose blob differs from the judged file (for example a substituted summary); a `gate.json` whose digests do not match the manifests or the tree listing; a summary that names another `gate.json`; an `accepted.old` whose blob differs from the raw record (wrong prefix); and an `ACCEPTED` that drops or changes an earlier line, appends another milestone, appends two lines, repeats a milestone, or lacks the final line ending. |
 | T-M0-06 | make_skeleton | `make -C agam-os print-flags` | Exit 0; prints every flag of spec §2.1 and §2.2 |
 | T-M0-07 | inventory_selftest | `check_inventory.py` on synthetic inventories, catalogues and summaries | `catalogue` mode rejects: a required ID removed; an ID duplicated; a required ID changed to stretch; an ID moved to another suite; an ID not in the inventory. `summary` mode rejects: a required ID absent; a required ID not `PASS`; a binding that differs from `gate.json`. Both accept the matching case. |
 
@@ -245,12 +286,14 @@ Class is `required` unless marked **stretch** or **optional**. Expected host sta
 |---|---|
 | E-M0-01 | Corrupting the cached Limine asset makes `fetch-limine.sh` exit non-zero |
 | E-M0-02 | Git for Windows: `git config user.name`, `user.email` and `git log --format="%an <%ae> / %cn <%ce>%n%B"` over the bootstrap commits show only the identity of `DECISIONS.md` O-18 and no attribution text |
-| E-M0-03 | Git for Windows: `git ls-files --eol` shows `i/lf w/lf` for every file in all three worktrees |
+| E-M0-03 | Git for Windows, in all three worktrees: `git ls-files --eol` shows `i/lf w/lf` for every file of the active text set (§4.9). Every file of the byte-exact set shows the attribute `-text`, and `git hash-object --no-filters <file>` prints the blob ID that `git ls-files -s <file>` shows. |
 | E-M0-04 | The versions printed by T-M0-01 compared with `DECISIONS.md` §8.2; differences accepted by the owner |
 | E-M0-05 | Git for Windows: `git worktree list` and `git branch --show-current` in each worktree |
 | E-M0-06 | The owner's recorded disposition of the Limine pin evidence (B-02) |
 | E-M0-07 | **M0 bootstrap check, by hand** (§8.6): from readable `git diff --raw --no-abbrev --no-renames` output for each tip and for the merge, the owner checks and files a table of every record — path ownership, status, modes, blob IDs, no overlap, and merge records equal to the union |
 | E-M0-08 | By hand: the `m0` entries of the candidate catalogue compared with Appendix A |
+| E-M0-09 | **M0 record check, by hand** (§8.6): the listing of `git diff --raw --no-abbrev --no-renames <GATE_HEAD> <GATE_REC>` shows exactly the files of §8.3 rule 1; for each archived file, `git hash-object --no-filters .gate/M0/<name>` prints the new blob ID of its record; the old blob of `ACCEPTED` is the empty blob `e69de29bb2d1d6434b8b29ae775ad8c2e48c5391`, and its new blob equals `git hash-object --no-filters` of a file that contains exactly `M0` and one LF |
+| E-M0-10 | **Cache control**, in a scratch copy of the tree, never in a worktree: a stale `.pyc` is planted for one runner module (source unchanged, same size and timestamp). With the launch procedure of §8.2 step 8a the cache is found and removed before the run; with step 8a skipped, the runner exits 2 by check 4 of §4.6 |
 | RV-M0-01 | Independent reading of every candidate gate tool (`check_ownership.py`, `check_inventory.py`, `gate_manifest.ps1`) and of the runner's selection, accounting and binding code against §4 and §8, by parties other than their author: **two separate readings, the architect's and Claude Code's**, filed as §8.1 describes (O-26) |
 
 ### K1 (suite `k1`)
@@ -402,7 +445,7 @@ agam-lang/tests/
 | T-L1-07 | Lexer fuzz | 500 seeded inputs raise only `AgamError` |
 | T-L2-01 | Golden ASTs | At least one per grammar production; default JSON contains no span, origin or language counts; `--spans` output for the cases of spec §6.5, including Appendix C.10 exactly |
 | T-L2-02 | Precedence | ≥ 20 expressions |
-| T-L2-03 | Syntax errors | E0201–E0214 with code, line, column; E0208 for each case (a)–(c) of §5.2 and raised by the parser; E0210 for `stop` in a function nested in a loop; error precedence of §5.2; E0214 at every boundary of spec §5.3 and Appendix C.11 — 100 levels accepted and 101 rejected for each of the five bracket uses, for blocks and for a mixture, the unclosed-bracket case, and E0214 taking precedence at the first token of a block; a flat chain of 1,000 operators and 200 successive index operations parse (§7.10) |
+| T-L2-03 | Syntax errors | E0201–E0214 with code, line, column; one case for every row of spec §5.4, including E0201 for each of the seven header forms and E0203 for an `INDENT` on the first line, at top level and inside a block; the outcomes of Appendix C.15; E0208 for each case (a)–(c) of §5.2 and raised by the parser; E0210 for `stop` in a function nested in a loop; error precedence of §5.2; E0214 at every boundary of spec §5.3 and Appendix C.11 — 100 levels accepted and 101 rejected for each of the five bracket uses, for blocks and for a mixture, the unclosed-bracket case, and E0214 taking precedence at the first token of a block; a flat chain of 1,000 operators and 200 successive index operations parse (§7.10) |
 | T-L2-04 | Fusion ASTs | Default AST JSON identical across each keyword-substitution triple |
 | T-L2-05 | Parser fuzz | 500 seeded mutations raise only `AgamError` |
 | T-L3-01 | Operators | Every row of §7.4 for the types available (numbers, text, booleans, nothing); unsupported combinations give the stated E0302 variant; a flat sum with 1,000 `+` evaluates (§7.10) |
@@ -421,7 +464,7 @@ agam-lang/tests/
 | T-L4-08 | Equality and display | §7.5 table including `[true] == [1]` false and function identity; text escaping inside lists; depth 100 displayed and compared, depth 101 (built with `append`, since a literal that deep is E0214) gives E0408; expanded count exactly 1,000,000 compared, 1,000,001 gives E0408 even when the lengths differ; a list above the count limit equals itself; the shared-list example of §7.5 (`a == a` true, `a == b` E0408) |
 | T-L4-09 | Evaluation order | Programs whose functions record their call order: binary operands, arguments, `a[f()] = g()` (g first), `a[f()] += g()` (f first, once), `show`, short-circuit, error precedence of §7.3 rule 10 |
 | T-L5-01 | Catalogue completeness | The implementation's codes equal `codes_expected.json`; both catalogues equal `messages_expected.json`; every code E01xx–E04xx is raised by at least one program test |
-| T-L5-02 | Rendered diagnostics | Appendix C.1–C.9 reproduced byte for byte; further golden texts written by hand from Appendix A and B, English and Hinglish, covering one row per catalogue variant, tab expansion, zero-width spans, end of file, diagnostics without a span, and keywords quoted as typed |
+| T-L5-02 | Rendered diagnostics | Appendix C.1–C.9 and C.12–C.14 reproduced byte for byte; further golden texts written by hand from Appendix A and B, English and Hinglish, covering one row per catalogue variant, tab expansion, zero-width spans, end of file, diagnostics without a span, and keywords quoted as typed |
 | T-L5-03 | Suggestions | 10 misspellings suggested; 5 unrelated words not; tie-break and case-only cases of §8.4 |
 | T-L5-04 | Message language | `auto` by part counts, including a mixed phrase, a lexical error part-way through a file, and E0100 |
 | T-L5-05 | Whole-program fuzz | 2,000 seeded cases; exit status only 0, 1 or 2; no traceback text; never 70 |
@@ -471,6 +514,7 @@ If Claude believes a test contradicts the spec, Claude files a proposal and does
 - **`gate/<milestone>`**: a temporary branch created from `BASE`. `main` is never used for trial merges.
 - **`GATE_HEAD`**: the commit that was tested. **`GATE_REC`**: the commit that is promoted — `GATE_HEAD` plus the gate record.
 - **Trusted tools (`TOOLS`)**: `check_ownership.py`, `check_inventory.py`, `gate_manifest.ps1` and every file they import — all under `agam-dev/verify/` — **as they exist in `BASE`**, together with `docs/TEST_PLAN.md` at `BASE` (for the inventory). The owner exports them to a directory **outside every worktree** (`D:\Agam-Computing\.gate-tools\<BASE>\`; O-27), byte-exactly from Git's object store, checks each exported file's blob ID against `BASE`, and makes the directory read-only. **Every checker call below uses `TOOLS`, never a path inside a worktree**, so a tip cannot replace the tool that judges it (AR-25).
+- **The trusted directory stays exact.** It contains exactly the exported files and nothing else; a listing that differs from the `git ls-tree` list of step 1 fails. Trusted tools are run as `python -B …`, so that no cache file is ever added to it; and because it holds nothing but the exported files, no cache exists there to be read.
 - **Candidate tools**: the runner and catalogue at `GATE_HEAD`. They execute the tests; their catalogue and their summary are judged by `TOOLS`.
 - **Verification-path change**: any record under `agam-dev/verify/` in Codex's manifest. It needs review item `RV-<milestone>-VP` before the trial merge: **two separate readings of that diff, one by the architect and one by Claude Code** (O-26). Each reader is a party other than the author, names the exact Codex tip it read, and must leave no Critical or Major finding open; neither reading replaces the other. Claude Code reads with read-only commands, never edits `agam-dev/verify/`, and commits its reading under `agam-dev/reports/claude/` before it submits its own tip — so Codex reports its tip first whenever verification tools changed. The architect's reading is given to the owner, who stores it in the gate record. The changed tools become trusted only when they are part of a later `BASE`.
 
@@ -479,7 +523,8 @@ If Claude believes a test contradicts the spec, Claude files a proposal and does
 ```
 # 0. Live state — Git for Windows; repeated in steps 8 and 10
 git rev-parse main agent/claude agent/codex              # must print BASE, TIP_C, TIP_X
-git status --porcelain=v1 --untracked-files=all          # must print nothing
+git status --porcelain=v1 --untracked-files=all          # must print nothing (ignored files are not shown here;
+                                                         #  in this worktree the runner rejects them, §4.6 check 3)
 git merge-base --is-ancestor <BASE> <TIP_C>              # exit 0
 git merge-base --is-ancestor <BASE> <TIP_X>              # exit 0
 
@@ -515,19 +560,40 @@ git ls-tree -r -z --full-tree <GATE_HEAD>                # captured byte-exactly
 python <TOOLS>/agam-dev/verify/check_inventory.py catalogue --test-plan <TOOLS>/docs/TEST_PLAN.md \
        --catalogue agam-dev/verify/catalogue.json --milestone <M> --accepted agam-dev/gates/ACCEPTED
 
-# 8. Run (WSL2, /mnt/d/Agam-Computing/ecosystem), then judge the summary and re-check live state
-python3 agam-dev/verify/run.py gate <M>
-python <TOOLS>/agam-dev/verify/check_inventory.py summary --test-plan <TOOLS>/docs/TEST_PLAN.md \
-       --summary <summary.json> --gate .gate/<M>/gate.json --milestone <M> --accepted agam-dev/gates/ACCEPTED
+# 8. Run — WSL2, in /mnt/d/Agam-Computing/ecosystem, all of it in one shell
+# 8a. Before any candidate code runs: system tools only
+find . -path ./.git -prune -o \( -name __pycache__ -o -name .pytest_cache -o -name '*.pyc' -o -name '*.pyo' \) -print
+find agam-os/build -mindepth 1 -not -path 'agam-os/build/cache' -not -path 'agam-os/build/cache/*' -print
+#     both must print nothing on standard output (a missing agam-os/build is fine).
+#     Whatever they print is deleted by the owner, and both are repeated.
+export PYTHONDONTWRITEBYTECODE=1
+export PYTHONPYCACHEPREFIX="$(mktemp -d)"                # new, empty, outside every worktree
+# 8b. The run. The options repeat the variables on purpose: -E or -I would switch the variables off, not the options.
+python3 -B -X pycache_prefix="$PYTHONPYCACHEPREFIX" agam-dev/verify/run.py gate <M>
+# 8c. After the run: system tools only
+find . -path ./.git -prune -o \( -name __pycache__ -o -name .pytest_cache -o -name '*.pyc' -o -name '*.pyo' \) -print
+find "$PYTHONPYCACHEPREFIX" -type f -print
+#     both must print nothing; otherwise the result is void
+cp <summary.json written by the run> .gate/<M>/summary.json
+# 8d. Windows: judge the copy that will be archived, then re-check live state
+python -B <TOOLS>/agam-dev/verify/check_inventory.py summary --test-plan <TOOLS>/docs/TEST_PLAN.md \
+       --summary .gate/<M>/summary.json --gate .gate/<M>/gate.json --milestone <M> --accepted agam-dev/gates/ACCEPTED
 #    repeat step 0; additionally: git rev-parse gate/<M>  must print GATE_HEAD
 
-# 9. After reviews and the owner's acceptance: the record commit, on gate/<M>
-#    adds agam-dev/gates/<M>/ (record.md, the three manifests, gate.json, tree.lst, summary.json,
-#    and the architect's tool reading when one was required)
-#    and appends the line <M> to agam-dev/gates/ACCEPTED
+# 9. After reviews and the owner's acceptance: the record commit — one commit on gate/<M>, parent GATE_HEAD.
+#    It adds, under agam-dev/gates/<M>/, a byte-for-byte copy of each of these files of .gate/<M>/ :
+#      claude.raw  codex.raw  merged.raw  tree.lst  gate.json  summary.json  record.md
+#      tools-reading-architect.md      — exactly when <M> is M0 or codex.raw has a record under agam-dev/verify/
+#    and it appends the line <M> to agam-dev/gates/ACCEPTED. Nothing else.
 git rev-parse HEAD                                       # GATE_REC
+git rev-list --parents -n 1 <GATE_REC>                   # must print exactly: <GATE_REC> <GATE_HEAD>
 git diff --raw -z --no-abbrev --no-renames --output=.gate/<M>/record.raw <GATE_HEAD> <GATE_REC>
-python <TOOLS>/agam-dev/verify/check_ownership.py --verify-record .gate/<M>/record.raw --milestone <M>
+git cat-file blob <old blob ID of agam-dev/gates/ACCEPTED in record.raw>     # captured byte-exactly into .gate/<M>/accepted.old
+python <TOOLS>/agam-dev/verify/check_ownership.py --verify-record .gate/<M>/record.raw --milestone <M> \
+       --judged .gate/<M> --accepted-old .gate/<M>/accepted.old
+python <TOOLS>/agam-dev/verify/check_inventory.py summary --test-plan <TOOLS>/docs/TEST_PLAN.md \
+       --summary .gate/<M>/summary.json --gate .gate/<M>/gate.json --milestone <M> --accepted .gate/<M>/accepted.old
+#    the second command judges again the summary that step 9 has just proved to be the archived one
 
 # 10. Immediately before promotion: repeat step 0, with gate/<M> now equal to GATE_REC; then
 git switch main
@@ -536,7 +602,7 @@ git tag -a accepted-<M> -m "<M>: BASE <sha>, TIP_C <sha>, TIP_X <sha>, tested <G
 git branch -d gate/<M>
 ```
 
-`.gate/` is untracked and ignored. `gate_manifest.ps1` automates the byte-exact captures of steps 1, 2, 5, 6 and 9 with read-only git commands; like the checkers, it is run from `TOOLS`. These commands are proposals: the flags of steps 2 and 6 were exercised read-only by the second review (evidence R3-E03); nothing else has been run.
+`.gate/` is untracked and ignored. `gate_manifest.ps1` automates the byte-exact captures of steps 1, 2, 5, 6 and 9 with read-only git commands; like the checkers, it is run from `TOOLS`. `record.md` is written by the owner, and the architect's reading is placed, into `.gate/<M>/` before they are copied, so that every archived file has a judged original there. These commands are proposals. Read-only forms of `git ls-tree`, `git diff --raw`, `git cat-file blob` and `git hash-object --no-filters` were exercised by the second and third reviews (evidence R3-E03, R4-E03); the `find` and interpreter settings of step 8 were exercised by the architect on a scratch fixture (`DECISIONS.md` §8.3). No gate step has been run as a gate.
 
 ### 8.3 What `check_ownership.py` verifies (Git-free)
 
@@ -550,7 +616,16 @@ For each agent manifest:
 
 For the merge (`--verify-merge`): the set of records in `merged.raw` equals the union of the two agent manifests **record for record** — same path, status, old and new mode, old and new blob ID. Blob IDs identify contents, so this covers contents, modes, additions and deletions. Any extra, missing or different record fails; so does a merge conflict in step 4.
 
-For the record commit (`--verify-record`): `record.raw` contains only additions (`A`, mode `100644`) under `agam-dev/gates/<M>/`, and exactly one record for `agam-dev/gates/ACCEPTED`; the new `ACCEPTED` is the old content followed by the single line `<M>`. Any other record fails. This is why the tested and the promoted commits may differ without a second test run: the difference is confined to files no test reads.
+For the record commit (`--verify-record`; AR-34). Inputs: `record.raw` (the delta `GATE_HEAD` → `GATE_REC`), the milestone, the judged directory `.gate/<M>/`, and `accepted.old`. The check is Git-free: a blob ID is recomputed as the SHA-1 of `blob <size>\0<content>`, as in §4.6. A raw record carries paths, statuses, modes and blob IDs but no file content, which is why the content inputs are passed explicitly and each is tied to a blob ID of the record.
+
+1. **Exact file set.** `record.raw` contains exactly one `A` record with mode `100644` for each required file under `agam-dev/gates/<M>/` — `claude.raw`, `codex.raw`, `merged.raw`, `tree.lst`, `gate.json`, `summary.json`, `record.md`, and `tools-reading-architect.md` exactly when `<M>` is `M0` or `codex.raw` holds a record under `agam-dev/verify/` — and exactly one `M` record for `agam-dev/gates/ACCEPTED` (`100644` before and after). A missing file, an extra file, or any other path, status or mode fails.
+2. **Archived bytes are the judged bytes.** For each archived file, the new blob ID in `record.raw` equals the blob ID recomputed from the file of the same name in `.gate/<M>/`.
+3. **The judged files belong together.** The SHA-256 values in `gate.json` equal those recomputed from `claude.raw`, `codex.raw`, `merged.raw` and `tree.lst`; `summary.json` names the same four SHAs and the SHA-256 of that `gate.json`; `record.md` and the reading, when required, are not empty.
+4. **`ACCEPTED` grows by exactly one line.** The blob ID recomputed from `accepted.old` equals the old blob ID in `record.raw`. `accepted.old` is empty, or a sequence of LF-terminated milestone IDs without blank lines or duplicates, and does not contain `<M>`. The blob ID recomputed from `accepted.old` followed by `<M>` and one LF equals the new blob ID in `record.raw`. The new content is thereby proved without being read, and every earlier line is preserved. At the first gate `accepted.old` is the empty file created in the baseline (§4.2).
+
+Step 9 then runs `check_inventory.py summary` once more on `.gate/<M>/summary.json`, whose bytes rule 2 has just shown to be the archived ones. What is archived is therefore exactly what passes judgement at record time, even if a file under `.gate/<M>/` was changed by mistake after step 8.
+
+**Why the tested and the promoted commit may differ without a second test run.** The record delta holds two kinds of file. The files under `agam-dev/gates/<M>/` are read by no runner, test or checker. `ACCEPTED` **is** read — by the runner (§4.2) and by both inventory modes (§8.4) — and is the one deliberate exception: its only permitted change is the appended current milestone. That line cannot change what the finished run had to execute, because the run and its summary were judged against the old content; it takes effect from the next gate.
 
 ### 8.4 What `check_inventory.py` verifies (Git-free)
 
@@ -571,10 +646,14 @@ Together with step 3 this means a tip can neither drop a required test from the 
 
 At the M0 gate no trusted tools exist, because M0 creates them. Their place is taken by:
 
-1. **E-M0-07** — the owner's complete check by hand, for each tip and for the merge, using readable `git diff --raw --no-abbrev --no-renames` output: ownership of every path, status letters, modes, blob IDs, no overlap, and merge records equal to the union. M0 changes about a dozen files, which keeps this practical. The table of records is filed.
+1. **E-M0-07** — the owner's complete check by hand, for each tip and for the merge, using readable `git diff --raw --no-abbrev --no-renames` output: ownership of every path, status letters, modes, blob IDs, no overlap, and merge records equal to the union. M0 changes about a dozen bootstrap files, which keeps this practical. The archived review material committed under O-31 adds about fifty records to Codex's manifest; they are all additions under `agam-dev/reports/codex/` and are checked in the same way. The table of records is filed.
 2. **E-M0-08** — by hand: the `m0` entries of the candidate catalogue against Appendix A.
 3. **RV-M0-01** — two independent readings of the candidate gate tools and of the runner's selection, accounting and binding code, one by the architect and one by Claude Code, neither being their author (O-26).
 4. The candidate tools' own self-tests (T-M0-04, T-M0-05, T-M0-07) run in the gate. They corroborate the reading; they are not the basis of trust.
+5. **E-M0-09** — the record commit of M0 checked by hand against the four rules of §8.3, using Git's own blob IDs in place of the checker.
+6. **E-M0-10** — the cache control, once, in a scratch copy.
+
+Step 8a of §8.2 uses system tools only, so it applies at M0 unchanged.
 
 From K1 on, `TOOLS` exists. **E-K1-02** then demonstrates the protection once, in a scratch clone: a tip that replaces the checker with one that accepts everything, and also changes a path it does not own, must be rejected by the checker exported from `BASE`.
 
@@ -596,6 +675,7 @@ Every commit, including the merge and record commits, uses the identity of O-18 
 - Double-fault delivery, write-protection and no-execute enforcement, and invalid-argument panics of the allocator are covered only by stretch tests (O-09, O-19) plus mandatory review; without those runs the behaviour ships as `UNVERIFIED`.
 - An interrupted ending sequence of a test kernel is covered by review only (RV-K3-03).
 - The trusted tools judge the manifests, the catalogue and the summary. That the candidate runner really executed each test it reports rests on the review of verification-path changes (`RV-<milestone>-VP`) and on the architect's spot checks, not on a mechanical proof.
+- The runner passes the interpreter options to its child processes on the command line. A candidate tool that deliberately started a child without them would not be caught mechanically; that is excluded by the two readings of every verification-path change.
 - The release signature of the Limine asset is not verified (V-13).
 - AgamLang performance is not tested, and its limits are provisional policy, not measured guarantees (O-14).
 
