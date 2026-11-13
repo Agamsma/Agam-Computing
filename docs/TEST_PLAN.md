@@ -2,12 +2,12 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 3 — NOT APPROVED.** Addresses review findings AR-02, AR-03, AR-04, AR-08, AR-10, AR-16, AR-19, AR-20 and the test side of AR-05…AR-14 (`DECISIONS.md` §10); all are *addressed in draft — pending independent re-review*. |
-| Date | 2026-11-12 (revision 3) |
+| Status | **Draft v0.1, revision 4 — NOT APPROVED.** Corrects the points the second independent review left open: AR-02/AR-25 (checker provenance), AR-26 (required-test completeness), AR-27 (freshness and promotion), and the test side of AR-28…AR-31 (`DECISIONS.md` §10). All are *addressed in draft — pending independent re-review*. |
+| Date | 2026-11-12 (revision 4) |
 | Codex owns | `agam-os/tests/**`, `agam-lang/tests/**`, `agam-dev/verify/**`, `agam-dev/reports/codex/**` |
 | Paths | Relative to the repository root |
 
-No project test, harness or runner exists yet, and none has been run. What has been executed so far is listed in `DECISIONS.md` §8.3 and §8.5. Timeouts and counts here are budgets chosen by the architect, not measurements.
+No project test, harness, runner or checker exists yet, and none has been run. What has been executed so far is listed in `DECISIONS.md` §8.3 and §8.5. Every git and tool command in this document is a proposal that has not been run as part of a gate. Timeouts and counts here are budgets chosen by the architect, not measurements.
 
 ---
 
@@ -67,7 +67,7 @@ Evidence about an untracked file (for example a review report that has not been 
 | `agam-dev/reports/codex/<milestone>-evidence.md` | Codex | Evidence for every test, manual-evidence and review ID of the milestone |
 | `agam-dev/reports/codex/reviews/<milestone>.md` | Codex | Review findings (§7) |
 | `agam-dev/reports/codex/proposals/<nnn>-<slug>.md` | Codex | Requested spec changes |
-| `agam-dev/reports/codex/ARCHITECTURE_REVIEW.md` and its evidence folder | Codex | Architecture reviews (path chosen by the owner for the first review) |
+| `agam-dev/reports/codex/ARCHITECTURE_REVIEW*.md` and their evidence folders | Codex | Architecture reviews of the document revisions |
 | `agam-dev/gates/<milestone>/` | Owner | Gate record: manifests, runner summary, acceptance (§8) |
 
 ### 2.4 Identifiers and severities
@@ -79,6 +79,15 @@ Evidence about an untracked file (for example a review report that has not been 
 | `RV-<milestone>-nn` | Mandatory review item, answered in Codex's review |
 
 Severities: **Critical** and **Major** block acceptance; **Minor** should be fixed but does not block; **Informational** records a result. (These replace the High/Medium/Low names of earlier revisions: Critical and Major correspond to High and Medium, Minor to Low.)
+
+### 2.5 Two kinds of verification
+
+| Kind | What it is | When it can happen | Who |
+|---|---|---|---|
+| **Specification-level** | Reading the documents; checking them against each other and against primary sources; arithmetic; dry-running a procedure on paper or on synthetic data | Now, before any gate opens | Independent re-review (Codex), then the owner |
+| **Implementation-level** | Running a `T-` test, producing `E-` evidence, or answering an `RV-` review item about real code | Only after the relevant gate opens and the code exists | Gate procedure of §8 |
+
+A finding from an architecture review can be **resolved at specification level** by a re-review. That never means its implementation-level items have passed: those do not exist yet and stay `UNVERIFIED`. `DECISIONS.md` §10 lists both kinds separately for every finding.
 
 ---
 
@@ -105,7 +114,14 @@ The runner is Git-free and uses only the Python standard library. It is created 
 
 ### 4.1 Catalogue and classes
 
-`agam-dev/verify/catalogue.json` is hand-written by Codex from §5 and §6 of this document. Every test has an ID, a suite, a **class** and a **mode**:
+Two things must agree:
+
+- The **inventory** — Appendix A of this document: the complete list of test IDs with their suite and class. It belongs to the architecture documents, so neither agent can change it, and it is the only definition of what "all required tests" means.
+- The **catalogue** — `agam-dev/verify/catalogue.json`, written by Codex: the runner's registration of each test, with its mode and implementation.
+
+For every suite of a gate, the catalogue's set of (ID, class) pairs MUST equal the inventory's. An ID that is missing, duplicated, moved to another suite, given another class, or present without being in the inventory is an error (§4.4, §8.4).
+
+Every test has an ID, a suite, a **class** and a **mode**:
 
 | Class | Meaning |
 |---|---|
@@ -160,7 +176,8 @@ STRETCH  selected=<n> passed=<n> failed=<n> skipped=<n>
 OPTIONAL selected=<n> passed=<n> failed=<n> skipped=<n>
 ```
 
-- `MISSING`: the catalogue lists a required test for a selected suite, but no implementation is registered for it.
+- `MISSING`: a required test of a selected suite has no registered implementation.
+- **Inventory mismatch**: before selecting anything, the runner compares the catalogue with Appendix A as found in the working tree, for every selected suite. Any difference listed in §4.1 is exit status 2 and no test is run. This is the candidate runner checking itself; the check that counts for acceptance is made with the trusted tools in §8.2 steps 7 and 8.
 - **Exit status 0 only if** `REQUIRED selected > 0` **and** `passed == selected` (so `failed == skipped == missing == 0`).
 - Exit status 1 if any required test failed, was skipped or is missing, or if no required test was selected.
 - Exit status 2 for a usage or environment error, including a failed binding check (§4.6).
@@ -171,16 +188,23 @@ OPTIONAL selected=<n> passed=<n> failed=<n> skipped=<n>
 
 Every stretch `FAIL` produces a finding in Codex's review. The architect classifies it before acceptance: test defect; behaviour outside the normative text; or **violation of a normative requirement**, which becomes a blocking Major finding. Acceptance needs every stretch failure classified. A stretch test that was not run is recorded as `SKIPPED`, and the behaviour it covers stays `UNVERIFIED`.
 
-### 4.6 Binding results to commits; stale results (normative)
+### 4.6 Binding results to commits; inputs and outputs (normative)
 
 A `gate` run reads `.gate/<MILESTONE>/gate.json` and `.gate/<MILESTONE>/tree.lst`, produced on Windows in §8:
 
-- `gate.json` holds `BASE`, `TIP_C`, `TIP_X`, `GATE_HEAD` (full SHAs) and the SHA-256 of each manifest file.
+- `gate.json` holds `BASE`, `TIP_C`, `TIP_X`, `GATE_HEAD` (full SHAs) and the SHA-256 of `claude.raw`, `codex.raw`, `merged.raw` and `tree.lst`.
 - `tree.lst` is the byte-exact output of `git ls-tree -r -z --full-tree <GATE_HEAD>`.
 
-Before running any test, the runner recomputes, without Git, the blob ID of every listed file from the working tree (SHA-1 of `blob <size>\0<content>`), and checks that every mode is `100644`. Any difference, missing file or extra tracked-looking difference is exit status 2. This catches an edited tree, a wrong branch, and CRLF conversion.
+Before running any test, the runner does the following without Git. Any failure is exit status 2.
 
-`summary.json` repeats the four SHAs. **A gate result is valid only for exactly those SHAs and that tool environment.** It is void if `main` no longer equals `BASE`, if either agent tip has a different SHA, if the merge was redone, if the tree fails the check, or if `check_env.sh --brief` differs from the recorded one.
+1. **Binding file**: the SHA-256 of `tree.lst` equals the value in `gate.json`.
+2. **Tracked content**: for every entry of `tree.lst`, the file exists, its blob ID recomputed from the working tree (SHA-1 of `blob <size>\0<content>`) equals the listed one, and the listed mode is `100644`. This also catches CRLF conversion.
+3. **No untracked inputs**: every file in the working tree (outside `.git`) is either listed in `tree.lst` or lies in a **permitted output location**: `agam-os/build/`, `.gate/`, a `__pycache__/` directory, or `.pytest_cache/`. Any other file — an untracked source, header, test, module or report — fails the run.
+4. **Clean outputs**: `agam-os/build/` is removed except `agam-os/build/cache/`, whose downloads are re-verified by hash before use (T-M0-02).
+
+**What this proves and what it does not.** Steps 1–3 prove that the files on disk are exactly the listed tree and nothing else. They do **not** prove which commit or branch that tree belongs to, that `gate.json` tells the truth about the refs, or that a ref has not moved since. Commit and ref freshness are established only by the live checks the owner makes with Git for Windows (§8.2 steps 0, 8 and 10).
+
+`summary.json` repeats the four SHAs and the SHA-256 of `gate.json`. **A gate result is valid only for exactly those SHAs and that tool environment.** It is void if `main` no longer equals `BASE`, if either agent tip has a different SHA, if the merge was redone, if the tree fails the checks above, or if `check_env.sh --brief` differs from the recorded one.
 
 ### 4.7 Running kernel tests (`agam-os/tests/harness/qemu.py`, from K1)
 
@@ -188,7 +212,7 @@ Before running any test, the runner recomputes, without Git, the blob ID of ever
 2. Launch QEMU with the reference command of `AOS_KERNEL_SPEC.md` §11.5, serial to `serial.log`, plus `-d int,cpu_reset -D qemu.log`. Memory from `--mem` (default `256M`).
 3. Timeout budget: 20 s by default; 60 s for `pmm_exhaust`; 120 s for 4 GiB runs. On timeout, kill QEMU and fail.
 4. Save `cmd.txt`, `serial.log`, `qemu.log`, `exit_status`. Normalise `\r\n` to `\n`.
-5. `exit` mode: pass only if the **host** exit status equals the expected one (33; 35 for tests that expect a failure result) and every required pattern matches in order.
+5. `exit` mode: pass only if the **host** exit status equals the expected one (33; 35 for tests that expect a failure result), every required pattern matches in order, and the log contains **exactly one** `@@AOS-TEST@@ RESULT` line, with the expected verdict. No `RESULT` line, or more than one, is a failure (`AOS_KERNEL_SPEC.md` §12.4).
 6. `observe` mode: pass only if the required lines appear in order ending with `[aos] halt` within the budget; the harness then terminates QEMU. The exit device is not involved, and host status 33 is not expected.
 
 ### 4.8 Build once
@@ -212,9 +236,10 @@ Class is `required` unless marked **stretch** or **optional**. Expected host sta
 | T-M0-01 | env_tools | `sh agam-dev/verify/check_env.sh` | Exit 0; every tool of `AOS_KERNEL_SPEC.md` §2 reported with path and version; the script runs no `git` |
 | T-M0-02 | pin_fetch | `sh agam-os/tools/fetch-limine.sh` twice | Asset and header SHA-256 equal the PIN files; second run reports already verified; the files of spec §11.2 exist |
 | T-M0-03 | tree_integrity | Binding check of §4.6, plus a scan of every listed file | Blob IDs and modes match; no carriage-return byte in any tracked text file |
-| T-M0-04 | runner_selftest | The runner executed on synthetic catalogues | (a) all pass → 0; (b) a required `SKIP` → 1; (c) a required `MISSING` → 1; (d) empty required selection → 1; (e) a stretch `FAIL` → 0 and reported; (f) tree differs from `tree.lst` → 2; (g) a suite outside §4.2's set is not selected |
-| T-M0-05 | ownership_selftest | The checker of §8.3 on synthetic manifests | Accepts valid manifests; rejects a foreign path, a rename into a foreign path (seen as delete plus add), a mode other than `100644`, a symlink or submodule entry, a type change, overlapping manifests, and a merge manifest that differs from the union in path, blob or mode |
+| T-M0-04 | runner_selftest | The runner executed on synthetic catalogues and inventories | (a) all pass → 0; (b) a required `SKIP` → 1; (c) a required `MISSING` → 1; (d) empty required selection → 1; (e) a stretch `FAIL` → 0 and reported; (f) tree differs from `tree.lst` → 2; (g) a suite outside §4.2's set is not selected; (h) `tree.lst` hash differs from `gate.json` → 2; (i) an unlisted file outside the permitted output locations → 2; (j) catalogue differs from the inventory → 2 |
+| T-M0-05 | ownership_selftest | `check_ownership.py` (§8.3) on synthetic manifests | Accepts valid manifests, including a deletion (zero new mode and blob); rejects a foreign path, a rename into a foreign path (seen as delete plus add), a mode other than `100644`, a symlink or submodule entry, a type change, overlapping manifests, and a merge manifest that differs from the union in path, blob or mode. `--verify-record` accepts the exact record delta and rejects any other path, a modified existing record file, and an `ACCEPTED` change other than one appended line. |
 | T-M0-06 | make_skeleton | `make -C agam-os print-flags` | Exit 0; prints every flag of spec §2.1 and §2.2 |
+| T-M0-07 | inventory_selftest | `check_inventory.py` on synthetic inventories, catalogues and summaries | `catalogue` mode rejects: a required ID removed; an ID duplicated; a required ID changed to stretch; an ID moved to another suite; an ID not in the inventory. `summary` mode rejects: a required ID absent; a required ID not `PASS`; a binding that differs from `gate.json`. Both accept the matching case. |
 
 | ID | Manual evidence |
 |---|---|
@@ -224,7 +249,9 @@ Class is `required` unless marked **stretch** or **optional**. Expected host sta
 | E-M0-04 | The versions printed by T-M0-01 compared with `DECISIONS.md` §8.2; differences accepted by the owner |
 | E-M0-05 | Git for Windows: `git worktree list` and `git branch --show-current` in each worktree |
 | E-M0-06 | The owner's recorded disposition of the Limine pin evidence (B-02) |
-| E-M0-07 | For the M0 gate only: the owner's by-hand comparison of each agent's changed paths with the bootstrap scope (`ROADMAP.md` §2), because no accepted checker exists yet |
+| E-M0-07 | **M0 bootstrap check, by hand** (§8.6): from readable `git diff --raw --no-abbrev --no-renames` output for each tip and for the merge, the owner checks and files a table of every record — path ownership, status, modes, blob IDs, no overlap, and merge records equal to the union |
+| E-M0-08 | By hand: the `m0` entries of the candidate catalogue compared with Appendix A |
+| RV-M0-01 | Independent reading of every candidate gate tool (`check_ownership.py`, `check_inventory.py`, `gate_manifest.ps1`) and of the runner's selection, accounting and binding code against §4 and §8, by parties other than their author: **two separate readings, the architect's and Claude Code's**, filed as §8.1 describes (O-26) |
 
 ### K1 (suite `k1`)
 
@@ -233,18 +260,19 @@ Class is `required` unless marked **stretch** or **optional**. Expected host sta
 | T-K1-01 | build_clean | host | `make -C agam-os distclean iso` exits 0 with no `warning:` |
 | T-K1-02 | elf_header | host | ELF64, X86-64, type EXEC, entry ≥ `0xffffffff80000000` |
 | T-K1-03 | elf_segments | host | Exactly three LOAD segments, flags `R E`, `R`, `RW`, each page-aligned, none W+E; no `INTERP` or `DYNAMIC` header; no `.rela*`/`.rel*` section to apply |
-| T-K1-04 | no_fp_simd | host | In `llvm-objdump -d` output of the kernel: no operand naming `%xmm`, `%ymm`, `%zmm`, `%mm0`–`%mm7`, `%st` or `%k0`–`%k7`; and no x87, MMX, SSE/AVX, or state-save mnemonic (`f…` x87 forms, `emms`, `fxsave`/`fxrstor`, `xsave…`/`xrstor…`, `ldmxcsr`/`stmxcsr`, VEX/EVEX-encoded forms). Codex derives the exact pattern from the installed tool's real output and records it. |
+| T-K1-04 | no_fp_simd | host | In `llvm-objdump -d` output of the kernel (tool name resolved as in spec §2): no operand naming `%xmm`, `%ymm`, `%zmm`, `%mm0`–`%mm7`, `%st` or `%k0`–`%k7`; and no x87, MMX, SSE/AVX, or state-save mnemonic (`f…` x87 forms, `emms`, `fxsave`/`fxrstor`, `xsave…`/`xrstor…`, `ldmxcsr`/`stmxcsr`, VEX/EVEX-encoded forms). Codex derives the exact pattern from the installed tool's real output and records it. |
 | T-K1-05 | boot_banner | observe | Banner, `limine:`, `hhdm:`, `kernel:`, `cpu: nx enabled`, `init complete`, `halt` in order and in the formats of spec §12.1; HHDM offset ≥ `0xffff800000000000`; kernel virt ≥ `0xffffffff80000000` |
 | T-K1-06 | smoke | exit | `BEGIN smoke`, `RESULT PASS smoke` |
 | T-K1-07 | panic_exit | exit, host 35 | Panic block with `reason: test panic 42`, then `RESULT FAIL panic_exit` |
 | T-K1-08 | smoke_stability | exit | T-K1-06 ten times from one built image |
-| T-K1-09 | exit_convention | host | On the owner's QEMU: `smoke` gives host 33; `panic_exit` gives 35; the normal kernel run in `exit` mode is reported as a timeout failure; a recorded host status 0 is classified as failure |
+| T-K1-09 | exit_convention | host | On the owner's QEMU: `smoke` gives host 33; `panic_exit` gives 35; the normal kernel run in `exit` mode is reported as a timeout failure; a recorded host status 0 is classified as failure. On synthetic logs: a log with no `RESULT` line, and a log with two, are each classified as failure even with host status 33. |
 | T-K1-10 | kt_check_fail_return | exit, host 35 | A failed `KTEST_CHECK` followed by a normal return: `CHECK-FAILED`, then `RESULT FAIL` |
-| T-K1-11 | requests_layout | host | From `llvm-nm`/`llvm-readelf`: start marker, requests and end marker lie in that order inside the R+W segment, below `__bss_start`; symbols ordered and aligned as in spec §4.2; `__kernel_end ≤ 0xffffffffc0000000` |
+| T-K1-11 | requests_layout | host | From `llvm-nm`/`llvm-readelf` (names resolved as in spec §2): start marker, requests and end marker lie in that order inside the R+W segment, below `__bss_start`; symbols ordered and aligned as in spec §4.2; `__kernel_end ≤ 0xffffffffc0000000` |
 
 | ID | Manual evidence / review |
 |---|---|
 | E-K1-01 | Resolution of V-01…V-05, V-12, V-14 with evidence blocks |
+| E-K1-02 | **Weakened-checker control** (§8.6), in a scratch clone only: a tip that replaces `check_ownership.py` with one that accepts everything, and also changes a path it does not own, is taken through §8.2 steps 0–3; the checker exported from `BASE` must reject it |
 | RV-K1-01 | Linker script and flags match spec §2 and §4.2; nothing calls git; nothing but `fetch-limine.sh` uses the network |
 
 ### K2 (suite `k2`)
@@ -288,6 +316,7 @@ Faults are raised with inline assembly. Every dump is checked for all lines of s
 |---|---|
 | RV-K3-01 | Stub push/pop symmetry, stack alignment argument of spec §9.4 checked against the assembly, `cld` before the C call, error-code vector list |
 | RV-K3-02 | IDT gate encoding, interrupt-stack indexes, TSS interrupt-stack pointers — mandatory because their runtime test is stretch |
+| RV-K3-03 | The ending guard of spec §12.4: every event (normal completion, `panic`, each arriving vector including #BP) checks it before producing any output; nothing after the check can start a second ending sequence — mandatory because an interrupted ending sequence cannot be provoked from test code |
 
 ### K4 (suite `k4`)
 
@@ -315,7 +344,10 @@ Faults are raised with inline assembly. Every dump is checked for all lines of s
 
 | ID | Name | Pass condition |
 |---|---|---|
-| T-K5-01…04 | matrix_128M / 256M / 1G / 4G | Every required `exit`/`observe` test of `k1`–`k4` at each size; at 4 GiB at least one usable entry has base ≥ `0x100000000` |
+| T-K5-01 | matrix_128M | Every required `exit`/`observe` test of `k1`–`k4` with 128 MiB of guest memory |
+| T-K5-02 | matrix_256M | Every required `exit`/`observe` test of `k1`–`k4` with 256 MiB of guest memory |
+| T-K5-03 | matrix_1G | Every required `exit`/`observe` test of `k1`–`k4` with 1 GiB of guest memory |
+| T-K5-04 | matrix_4G | Every required `exit`/`observe` test of `k1`–`k4` with 4 GiB of guest memory; in addition, at least one usable memory-map entry has base ≥ `0x100000000` |
 | T-K5-05 | stability | Every required `exit`/`observe` test of `k1`–`k4` at 256 MiB, 20 repetitions from the same built images, zero failures |
 | T-K5-06 | uefi_boot **(optional)** | `boot_banner` and `smoke` with OVMF; `SKIP` with reason if absent |
 
@@ -364,16 +396,16 @@ agam-lang/tests/
 | T-L1-01 | Alias table | The runtime table equals `keywords_expected.json` exactly: 52 words, 5 phrases, 6 reserved components, with kind and language. Every alias in lower, UPPER, Title and alternating case lexes to its kind with the right `lang`, `lexeme` and `parts`. |
 | T-L1-02 | Phrases and composition | Each phrase merges; does not merge across a line break, comment or punctuation, including inside brackets. Every else-if form of spec §3.3, including `warna if`, `else agar`, `nahi to agar`, gives one `KW_ELIF` with the lexeme, span, parts and `lang` (`mixed` where applicable) of §3.4. A lone component gives `RESERVED_WORD` and no lexer error. |
 | T-L1-03 | Indentation | `INDENT`/`DEDENT` sequences; E0103; E0104; the mixed tab/space example of §4.2 |
-| T-L1-04 | Literals | Numbers and text per §4.4–§4.5, including `1e3`, leading zeros, the 1,000-digit boundary (accepted) and 1,001 digits (E0107), decimal overflow (E0107) |
-| T-L1-05 | Lexical errors | E0100–E0107 with code, line, column |
+| T-L1-04 | Literals | Numbers and text per §4.4–§4.5, including `1e3`, leading zeros, the 1,000-digit boundary (accepted) and 1,001 digits (E0107), decimal overflow (E0107); a text literal of exactly 1,000,000 characters (accepted) and of 1,000,001 (E0108, span on the opening quote); first-problem order inside a literal (E0106 before a later E0108 or E0102) |
+| T-L1-05 | Lexical errors | E0100–E0108 with code, variant, line, column; E0100 offset with and without a byte-order mark |
 | T-L1-06 | Fusion tokens | `tokens --canonical` identical across each keyword-substitution triple; `IDENT` lines carry the name |
 | T-L1-07 | Lexer fuzz | 500 seeded inputs raise only `AgamError` |
-| T-L2-01 | Golden ASTs | At least one per grammar production; default JSON contains no span or origin |
+| T-L2-01 | Golden ASTs | At least one per grammar production; default JSON contains no span, origin or language counts; `--spans` output for the cases of spec §6.5, including Appendix C.10 exactly |
 | T-L2-02 | Precedence | ≥ 20 expressions |
-| T-L2-03 | Syntax errors | E0201–E0213 with code, line, column; E0208 for each case (a)–(c) of §5.2 and raised by the parser; E0210 for `stop` in a function nested in a loop; error precedence of §5.2 |
+| T-L2-03 | Syntax errors | E0201–E0214 with code, line, column; E0208 for each case (a)–(c) of §5.2 and raised by the parser; E0210 for `stop` in a function nested in a loop; error precedence of §5.2; E0214 at every boundary of spec §5.3 and Appendix C.11 — 100 levels accepted and 101 rejected for each of the five bracket uses, for blocks and for a mixture, the unclosed-bracket case, and E0214 taking precedence at the first token of a block; a flat chain of 1,000 operators and 200 successive index operations parse (§7.10) |
 | T-L2-04 | Fusion ASTs | Default AST JSON identical across each keyword-substitution triple |
 | T-L2-05 | Parser fuzz | 500 seeded mutations raise only `AgamError` |
-| T-L3-01 | Operators | Every row of §7.4 for the types available (numbers, text, booleans, nothing); unsupported combinations give the stated E0302 variant |
+| T-L3-01 | Operators | Every row of §7.4 for the types available (numbers, text, booleans, nothing); unsupported combinations give the stated E0302 variant; a flat sum with 1,000 `+` evaluates (§7.10) |
 | T-L3-02 | Display forms | Every available value type |
 | T-L3-03 | Control flow | if / else-if / else, while, repeat, stop, skip |
 | T-L3-04 | Runtime errors | E0302c, E0401, E0404 |
@@ -382,19 +414,19 @@ agam-lang/tests/
 | T-L4-01 | Functions | Arguments, return, recursion, the closure example of §7.9, E0303, E0304, E0213 |
 | T-L4-02 | Lists and text | Literals, indexing, stores, E0305, E0306a–c, E0302d, for loops, snapshot iteration |
 | T-L4-03 | Built-ins | Each built-in under both names; each error of §7.11; `number()` grammar accept/reject table; `ask` with `.in` and E0405 |
-| T-L4-04 | Limits | E0402 without a traceback; E0403; `range` and concatenation at exactly 1,000,000 (accepted) and one more (E0408); display over the limit (E0408) |
+| T-L4-04 | Limits | E0402 without a traceback; E0403; `range` and concatenation at exactly 1,000,000 (accepted) and one more (E0408); a list literal with 1,000,001 items raises E0408 **before its first item is evaluated** (the first item is a call with a visible effect that must not occur); display longer than the limit (E0408); every row of Appendix C.11 |
 | T-L4-05 | Examples | Every file in `agam-lang/examples/` exits 0 |
 | T-L4-06 | Built-in alias behaviour | Each `builtin_alias` pair gives identical output and status; `length == lambai` is `true` |
-| T-L4-07 | No cycles | E0308 for `append(a, a)`, `a[0] = a`, an indirect cycle through a nested list, and an augmented indexed store; after each error the list's display form is unchanged; sharing without a cycle is accepted |
-| T-L4-08 | Equality and display | §7.5 table including `[true] == [1]` false and function identity; text escaping inside lists |
+| T-L4-07 | No cycles | E0308 for `append(a, a)`, `a[0] = a`, an indirect cycle through a nested list, and an augmented indexed store; after each error the list's display form is unchanged; sharing without a cycle is accepted; a value of depth 5,000 built in a loop can be appended (no limit takes part in the cycle rule) and an indirect cycle through it is still E0308 |
+| T-L4-08 | Equality and display | §7.5 table including `[true] == [1]` false and function identity; text escaping inside lists; depth 100 displayed and compared, depth 101 (built with `append`, since a literal that deep is E0214) gives E0408; expanded count exactly 1,000,000 compared, 1,000,001 gives E0408 even when the lengths differ; a list above the count limit equals itself; the shared-list example of §7.5 (`a == a` true, `a == b` E0408) |
 | T-L4-09 | Evaluation order | Programs whose functions record their call order: binary operands, arguments, `a[f()] = g()` (g first), `a[f()] += g()` (f first, once), `show`, short-circuit, error precedence of §7.3 rule 10 |
 | T-L5-01 | Catalogue completeness | The implementation's codes equal `codes_expected.json`; both catalogues equal `messages_expected.json`; every code E01xx–E04xx is raised by at least one program test |
-| T-L5-02 | Rendered diagnostics | Golden text, English and Hinglish, covering header, tab expansion, caret position and width, zero-width spans, end of file, E0100 without excerpt, keyword quoted as typed (including a mixed phrase) |
+| T-L5-02 | Rendered diagnostics | Appendix C.1–C.9 reproduced byte for byte; further golden texts written by hand from Appendix A and B, English and Hinglish, covering one row per catalogue variant, tab expansion, zero-width spans, end of file, diagnostics without a span, and keywords quoted as typed |
 | T-L5-03 | Suggestions | 10 misspellings suggested; 5 unrelated words not; tie-break and case-only cases of §8.4 |
 | T-L5-04 | Message language | `auto` by part counts, including a mixed phrase, a lexical error part-way through a file, and E0100 |
 | T-L5-05 | Whole-program fuzz | 2,000 seeded cases; exit status only 0, 1 or 2; no traceback text; never 70 |
 | T-L5-06 | Fusion corpus | ≥ 15 keyword-substitution triples covering every keyword, phrase and else-if form: token, AST and output identity |
-| T-L5-07 | Internal error | Calling `agamlang.cli.main` in-process with a raising `_fault`: E0900 rendering, exit status 70, no traceback. No command-line or environment route to this exists (checked by review RV-L5-01). |
+| T-L5-07 | Internal error | Calling `agamlang.cli.main` in-process with a raising `_fault`: the output of Appendix C.7, exit status 70, no traceback. No command-line or environment route to this exists (checked by review RV-L5-01). |
 
 | ID | Review |
 |---|---|
@@ -433,77 +465,122 @@ If Claude believes a test contradicts the spec, Claude files a proposal and does
 
 ### 8.1 Roles and terms
 
-- All `git` commands are run by the **owner**, with Git for Windows, in `D:\Agam-Computing\ecosystem`. Agents never run them. `sh`, `python3` and `make` run in WSL2.
+- All `git` commands are run by the **owner**, with Git for Windows, in `D:\Agam-Computing\ecosystem`. Agents never run them. `sh`, `python3` and `make` run in WSL2. Git-free Python tools may run on either side.
 - **`BASE`**: the full SHA of `main` when the milestone starts. It is recorded then and does not change during the milestone. If `main` has to change, the milestone restarts from the new `BASE`: both agents merge it and every earlier manifest and result is void.
-- **`TIP_C`, `TIP_X`**: the exact full SHAs of `agent/claude` and `agent/codex` submitted for the gate. Each agent's worktree must be clean (`git status --porcelain=v1 --untracked-files=all` prints nothing) when it reports its tip.
+- **`TIP_C`, `TIP_X`**: the exact full SHAs of `agent/claude` and `agent/codex` submitted for the gate, each reported from a clean worktree.
 - **`gate/<milestone>`**: a temporary branch created from `BASE`. `main` is never used for trial merges.
-- **Checker**: `agam-dev/verify/check_ownership.py` **as it exists at `BASE`**, so a tip cannot weaken the check applied to itself. For the M0 gate no accepted checker exists; E-M0-07 replaces it and T-M0-05 exercises the new checker.
+- **`GATE_HEAD`**: the commit that was tested. **`GATE_REC`**: the commit that is promoted — `GATE_HEAD` plus the gate record.
+- **Trusted tools (`TOOLS`)**: `check_ownership.py`, `check_inventory.py`, `gate_manifest.ps1` and every file they import — all under `agam-dev/verify/` — **as they exist in `BASE`**, together with `docs/TEST_PLAN.md` at `BASE` (for the inventory). The owner exports them to a directory **outside every worktree** (`D:\Agam-Computing\.gate-tools\<BASE>\`; O-27), byte-exactly from Git's object store, checks each exported file's blob ID against `BASE`, and makes the directory read-only. **Every checker call below uses `TOOLS`, never a path inside a worktree**, so a tip cannot replace the tool that judges it (AR-25).
+- **Candidate tools**: the runner and catalogue at `GATE_HEAD`. They execute the tests; their catalogue and their summary are judged by `TOOLS`.
+- **Verification-path change**: any record under `agam-dev/verify/` in Codex's manifest. It needs review item `RV-<milestone>-VP` before the trial merge: **two separate readings of that diff, one by the architect and one by Claude Code** (O-26). Each reader is a party other than the author, names the exact Codex tip it read, and must leave no Critical or Major finding open; neither reading replaces the other. Claude Code reads with read-only commands, never edits `agam-dev/verify/`, and commits its reading under `agam-dev/reports/claude/` before it submits its own tip — so Codex reports its tip first whenever verification tools changed. The architect's reading is given to the owner, who stores it in the gate record. The changed tools become trusted only when they are part of a later `BASE`.
 
 ### 8.2 Steps
 
 ```
-# 1. Preconditions (Git for Windows)
-git rev-parse main                                   # must print BASE
-git merge-base --is-ancestor <BASE> <TIP_C>          # exit 0
-git merge-base --is-ancestor <BASE> <TIP_X>          # exit 0
+# 0. Live state — Git for Windows; repeated in steps 8 and 10
+git rev-parse main agent/claude agent/codex              # must print BASE, TIP_C, TIP_X
+git status --porcelain=v1 --untracked-files=all          # must print nothing
+git merge-base --is-ancestor <BASE> <TIP_C>              # exit 0
+git merge-base --is-ancestor <BASE> <TIP_X>              # exit 0
+
+# 1. Trusted tools exported from BASE (from K1 on; for M0 see §8.6)
+git ls-tree -r <BASE> -- agam-dev/verify docs/TEST_PLAN.md   # paths and blob IDs
+git cat-file blob <blob id>                                  # each file, captured byte-exactly into TOOLS
+git hash-object --no-filters <exported file>                 # must print the same blob ID
 
 # 2. Per-agent manifests: every change from BASE to the tip, with modes and blob IDs
 git diff --raw -z --no-abbrev --no-renames --output=.gate/<M>/claude.raw <BASE> <TIP_C>
 git diff --raw -z --no-abbrev --no-renames --output=.gate/<M>/codex.raw  <BASE> <TIP_X>
 
-# 3. Ownership and form check of each manifest (checker from BASE; Git-free)
-python agam-dev/verify/check_ownership.py --agent claude --manifest .gate/<M>/claude.raw
-python agam-dev/verify/check_ownership.py --agent codex  --manifest .gate/<M>/codex.raw
+# 3. Ownership and form of each manifest
+python <TOOLS>/agam-dev/verify/check_ownership.py --agent claude --manifest .gate/<M>/claude.raw
+python <TOOLS>/agam-dev/verify/check_ownership.py --agent codex  --manifest .gate/<M>/codex.raw
+#    a verification-path change in codex.raw: both readings of RV-<M>-VP must be filed before step 4
 
 # 4. Trial merge on the gate branch
 git switch -c gate/<M> <BASE>
 git merge --no-ff -m "gate <M>: merge agent/claude" <TIP_C>
 git merge --no-ff -m "gate <M>: merge agent/codex"  <TIP_X>
-git rev-parse HEAD                                   # GATE_HEAD
+git rev-parse HEAD                                       # GATE_HEAD
 
-# 5. Verify the merge result against the two approved manifests
+# 5. Merge result against the two approved manifests
 git diff --raw -z --no-abbrev --no-renames --output=.gate/<M>/merged.raw <BASE> <GATE_HEAD>
-python agam-dev/verify/check_ownership.py --verify-merge .gate/<M>/claude.raw .gate/<M>/codex.raw .gate/<M>/merged.raw
+python <TOOLS>/agam-dev/verify/check_ownership.py --verify-merge .gate/<M>/claude.raw .gate/<M>/codex.raw .gate/<M>/merged.raw
 
-# 6. Binding files for the runner: tree.lst (byte-exact ls-tree) and gate.json
-git ls-tree -r -z --full-tree <GATE_HEAD>            # captured byte-exactly into .gate/<M>/tree.lst
+# 6. Binding files
+git ls-tree -r -z --full-tree <GATE_HEAD>                # captured byte-exactly into .gate/<M>/tree.lst
+#    gate.json: BASE, TIP_C, TIP_X, GATE_HEAD, and the SHA-256 of claude.raw, codex.raw, merged.raw, tree.lst
 
-# 7. WSL2, in /mnt/d/Agam-Computing/ecosystem
+# 7. Candidate catalogue against the trusted inventory
+python <TOOLS>/agam-dev/verify/check_inventory.py catalogue --test-plan <TOOLS>/docs/TEST_PLAN.md \
+       --catalogue agam-dev/verify/catalogue.json --milestone <M> --accepted agam-dev/gates/ACCEPTED
+
+# 8. Run (WSL2, /mnt/d/Agam-Computing/ecosystem), then judge the summary and re-check live state
 python3 agam-dev/verify/run.py gate <M>
+python <TOOLS>/agam-dev/verify/check_inventory.py summary --test-plan <TOOLS>/docs/TEST_PLAN.md \
+       --summary <summary.json> --gate .gate/<M>/gate.json --milestone <M> --accepted agam-dev/gates/ACCEPTED
+#    repeat step 0; additionally: git rev-parse gate/<M>  must print GATE_HEAD
 
-# 8. After acceptance (owner only)
-#    add the gate record under agam-dev/gates/<M>/ and the line in agam-dev/gates/ACCEPTED, commit on gate/<M>
+# 9. After reviews and the owner's acceptance: the record commit, on gate/<M>
+#    adds agam-dev/gates/<M>/ (record.md, the three manifests, gate.json, tree.lst, summary.json,
+#    and the architect's tool reading when one was required)
+#    and appends the line <M> to agam-dev/gates/ACCEPTED
+git rev-parse HEAD                                       # GATE_REC
+git diff --raw -z --no-abbrev --no-renames --output=.gate/<M>/record.raw <GATE_HEAD> <GATE_REC>
+python <TOOLS>/agam-dev/verify/check_ownership.py --verify-record .gate/<M>/record.raw --milestone <M>
+
+# 10. Immediately before promotion: repeat step 0, with gate/<M> now equal to GATE_REC; then
 git switch main
 git merge --ff-only gate/<M>
-git tag <tag>
+git tag -a accepted-<M> -m "<M>: BASE <sha>, TIP_C <sha>, TIP_X <sha>, tested <GATE_HEAD>, promoted <GATE_REC>"
 git branch -d gate/<M>
 ```
 
-`.gate/` is untracked and ignored. A helper that captures the manifests and writes `gate.json` byte-exactly (`agam-dev/verify/gate_manifest.ps1`, read-only git commands only) is an M0 deliverable; until it is accepted the owner runs the commands above by hand.
+`.gate/` is untracked and ignored. `gate_manifest.ps1` automates the byte-exact captures of steps 1, 2, 5, 6 and 9 with read-only git commands; like the checkers, it is run from `TOOLS`. These commands are proposals: the flags of steps 2 and 6 were exercised read-only by the second review (evidence R3-E03); nothing else has been run.
 
-### 8.3 What the checker verifies (Git-free)
+### 8.3 What `check_ownership.py` verifies (Git-free)
 
 For each agent manifest:
 
 - every record's path belongs to that agent's set in `ARCHITECTURE.md` §6.1 — for additions, modifications **and deletions**;
 - because rename detection is off, a rename appears as a deletion plus an addition, and **both** paths must belong to the agent;
 - status is `A`, `M` or `D` only (a type change fails);
-- the new mode of every added or modified file is `100644`; symbolic links (`120000`) and submodules (`160000`) fail;
+- for `A` and `M`, the new mode is `100644`; symbolic links (`120000`) and submodules (`160000`) fail; for `D`, the new mode and blob are all zeros, which is valid;
 - the two agent manifests have no path in common.
 
-For the merge (`--verify-merge`):
+For the merge (`--verify-merge`): the set of records in `merged.raw` equals the union of the two agent manifests **record for record** — same path, status, old and new mode, old and new blob ID. Blob IDs identify contents, so this covers contents, modes, additions and deletions. Any extra, missing or different record fails; so does a merge conflict in step 4.
 
-- the set of records in `merged.raw` equals the union of the two agent manifests **record for record**: same path, same status, same old and new mode, same old and new blob ID. Blob IDs identify contents, so this verifies contents, modes, additions and deletions, not merely path names;
-- any extra, missing or different record fails. A merge conflict in step 4 also fails the gate.
+For the record commit (`--verify-record`): `record.raw` contains only additions (`A`, mode `100644`) under `agam-dev/gates/<M>/`, and exactly one record for `agam-dev/gates/ACCEPTED`; the new `ACCEPTED` is the old content followed by the single line `<M>`. Any other record fails. This is why the tested and the promoted commits may differ without a second test run: the difference is confined to files no test reads.
 
-### 8.4 Failure and stale results
+### 8.4 What `check_inventory.py` verifies (Git-free)
 
-- On any failure: `git merge --abort` if needed, `git switch main`, `git branch -D gate/<M>`. `main` is untouched. The owning agent fixes its branch, which produces a new tip, and the gate restarts from step 1 with new manifests.
-- Manifests, binding files and runner results are valid only for the exact `BASE`, `TIP_C`, `TIP_X` and `GATE_HEAD` they name (§4.6). Nothing is carried over from an earlier attempt.
+Its inventory is Appendix A of the **trusted** `TEST_PLAN.md`; its suite set is §4.2 for `<M>` plus the suites of the milestones in `ACCEPTED`.
 
-### 8.5 Acceptance
+- `catalogue` mode: for every suite in the set, the catalogue's (ID, class) pairs equal the inventory's. It fails on an ID that is missing, duplicated, in another suite, of another class, or not in the inventory.
+- `summary` mode: the summary's SHAs equal `gate.json`'s; every **required** inventory ID of the set appears exactly once with `PASS`; no required ID has another status; every stretch or optional line names an inventory ID of that class; the totals agree with the lines.
 
-The milestone is accepted only when: steps 1–7 succeeded for one set of SHAs; the runner exited 0; all `E-` and `RV-` items of the milestone are filed; no Critical or Major finding is open; every stretch failure is classified (§4.5); and the owner says so. The record commit of step 8 may add files only under `agam-dev/gates/`. **Only the owner advances `main`**, by fast-forward, and only the owner tags and pushes.
+Together with step 3 this means a tip can neither drop a required test from the denominator nor weaken the check that would notice (AR-26).
+
+### 8.5 Failure and stale results
+
+- On any failure: `git merge --abort` if needed, `git switch main`, `git branch -D gate/<M>`. `main` is untouched. The owning agent fixes its branch, which produces a new tip, and the gate restarts from step 0 with new manifests.
+- Manifests, binding files and runner results are valid only for the exact `BASE`, `TIP_C`, `TIP_X` and `GATE_HEAD` they name. Nothing is carried over from an earlier attempt.
+- Freshness is checked **three times** with live refs (steps 0, 8 and 10). The Git-free tree check of §4.6 complements this; it does not replace it.
+
+### 8.6 The M0 exception, and the control that follows it
+
+At the M0 gate no trusted tools exist, because M0 creates them. Their place is taken by:
+
+1. **E-M0-07** — the owner's complete check by hand, for each tip and for the merge, using readable `git diff --raw --no-abbrev --no-renames` output: ownership of every path, status letters, modes, blob IDs, no overlap, and merge records equal to the union. M0 changes about a dozen files, which keeps this practical. The table of records is filed.
+2. **E-M0-08** — by hand: the `m0` entries of the candidate catalogue against Appendix A.
+3. **RV-M0-01** — two independent readings of the candidate gate tools and of the runner's selection, accounting and binding code, one by the architect and one by Claude Code, neither being their author (O-26).
+4. The candidate tools' own self-tests (T-M0-04, T-M0-05, T-M0-07) run in the gate. They corroborate the reading; they are not the basis of trust.
+
+From K1 on, `TOOLS` exists. **E-K1-02** then demonstrates the protection once, in a scratch clone: a tip that replaces the checker with one that accepts everything, and also changes a path it does not own, must be rejected by the checker exported from `BASE`.
+
+### 8.7 Acceptance
+
+The milestone is accepted only when: steps 0–8 succeeded for one set of SHAs; the runner exited 0 **and** `check_inventory.py summary` accepted its summary; all `E-` and `RV-` items of the milestone are filed; no Critical or Major finding is open; every stretch failure is classified (§4.5); and the owner says so. Steps 9 and 10 follow. **Only the owner advances `main`**, by fast-forward, and only the owner tags and pushes. Both the tested SHA (`GATE_HEAD`) and the promoted SHA (`GATE_REC`) are recorded, in the annotated tag and as the next milestone's `BASE`.
 
 Every commit, including the merge and record commits, uses the identity of O-18 and carries no attribution text.
 
@@ -517,5 +594,114 @@ Every commit, including the merge and record commits, uses the identity of O-18 
 - No continuous integration service (Q-11); the gate is run by hand.
 - UEFI boot is optional (Q-03).
 - Double-fault delivery, write-protection and no-execute enforcement, and invalid-argument panics of the allocator are covered only by stretch tests (O-09, O-19) plus mandatory review; without those runs the behaviour ships as `UNVERIFIED`.
+- An interrupted ending sequence of a test kernel is covered by review only (RV-K3-03).
+- The trusted tools judge the manifests, the catalogue and the summary. That the candidate runner really executed each test it reports rests on the review of verification-path changes (`RV-<milestone>-VP`) and on the architect's spot checks, not on a mechanical proof.
 - The release signature of the Limine asset is not verified (V-13).
 - AgamLang performance is not tested, and its limits are provisional policy, not measured guarantees (O-14).
+
+---
+
+## Appendix A. Test inventory (normative; machine-readable; AR-26)
+
+This is the only definition of which tests exist and which are required. It has one line per test: suite, ID, class. It MUST agree with the tables of §5 and §6; a difference between them is a defect of this document. Manual evidence (`E-`) and review (`RV-`) items are not in the inventory: they are listed per milestone in §5 and §6 and are checked by the owner at acceptance (§8.7).
+
+Tools read the lines between the two marker comments and ignore blank lines, code-fence lines and lines starting with `#`.
+
+<!-- inventory:begin -->
+```
+# suite id class
+m0 T-M0-01 required
+m0 T-M0-02 required
+m0 T-M0-03 required
+m0 T-M0-04 required
+m0 T-M0-05 required
+m0 T-M0-06 required
+m0 T-M0-07 required
+k1 T-K1-01 required
+k1 T-K1-02 required
+k1 T-K1-03 required
+k1 T-K1-04 required
+k1 T-K1-05 required
+k1 T-K1-06 required
+k1 T-K1-07 required
+k1 T-K1-08 required
+k1 T-K1-09 required
+k1 T-K1-10 required
+k1 T-K1-11 required
+k2 T-K2-01 required
+k2 T-K2-02 required
+k2 T-K2-03 required
+k2 T-K2-04 required
+k2 T-K2-05 required
+k3 T-K3-01 required
+k3 T-K3-02 required
+k3 T-K3-03 required
+k3 T-K3-04 required
+k3 T-K3-05 required
+k3 T-K3-06 required
+k3 T-K3-07 stretch
+k3 T-K3-08 stretch
+k3 T-K3-09 stretch
+k3 T-K3-10 required
+k3 T-K3-11 required
+k3 T-K3-12 required
+k3 T-K3-13 required
+k3 T-K3-14 required
+k3 T-K3-15 required
+k3 T-K3-16 required
+k4 T-K4-01 required
+k4 T-K4-02 required
+k4 T-K4-03 required
+k4 T-K4-04 required
+k4 T-K4-05 required
+k4 T-K4-06 required
+k4 T-K4-07 required
+k4 T-K4-08 required
+k4 T-K4-09 stretch
+k4 T-K4-10 required
+k4 T-K4-11 required
+k4 T-K4-12 stretch
+k5 T-K5-01 required
+k5 T-K5-02 required
+k5 T-K5-03 required
+k5 T-K5-04 required
+k5 T-K5-05 required
+k5 T-K5-06 optional
+l1 T-L1-01 required
+l1 T-L1-02 required
+l1 T-L1-03 required
+l1 T-L1-04 required
+l1 T-L1-05 required
+l1 T-L1-06 required
+l1 T-L1-07 required
+l2 T-L2-01 required
+l2 T-L2-02 required
+l2 T-L2-03 required
+l2 T-L2-04 required
+l2 T-L2-05 required
+l3 T-L3-01 required
+l3 T-L3-02 required
+l3 T-L3-03 required
+l3 T-L3-04 required
+l3 T-L3-05 required
+l3 T-L3-06 required
+l4 T-L4-01 required
+l4 T-L4-02 required
+l4 T-L4-03 required
+l4 T-L4-04 required
+l4 T-L4-05 required
+l4 T-L4-06 required
+l4 T-L4-07 required
+l4 T-L4-08 required
+l4 T-L4-09 required
+l5 T-L5-01 required
+l5 T-L5-02 required
+l5 T-L5-03 required
+l5 T-L5-04 required
+l5 T-L5-05 required
+l5 T-L5-06 required
+l5 T-L5-07 required
+```
+<!-- inventory:end -->
+
+Totals: 91 tests — 85 required, 5 stretch, 1 optional.

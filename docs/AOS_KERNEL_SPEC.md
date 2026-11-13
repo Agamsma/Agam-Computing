@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 3 — NOT APPROVED.** Addresses review findings AR-05…AR-07, AR-16, AR-17, AR-19, AR-21, AR-23 (`DECISIONS.md` §10); all are *addressed in draft — pending independent re-review*. No kernel code may be written until the owner opens gate G-AOS. |
-| Date | 2026-11-12 (revision 3) |
+| Status | **Draft v0.1, revision 4 — NOT APPROVED.** Corrects the points the second independent review left open: AR-05/AR-28 (ending a test run) and AR-17/AR-33 (hardware and request wording) (`DECISIONS.md` §10). Both are *addressed in draft — pending independent re-review*. No kernel code may be written until the owner opens gate G-AOS. |
+| Date | 2026-11-12 (revision 4) |
 | Paths | **All paths in this document are relative to `agam-os/`** unless they begin with `../`. |
 | Kernel style | Modular monolithic kernel; serial-first debugging (O-08) |
 | Scope | Boot, serial console, GDT/TSS, IDT and CPU exceptions, physical memory manager, test hooks |
@@ -36,6 +36,8 @@ No AOS code exists. §15 separates what has been observed (by the architect in a
 ## 2. Toolchain and flags (P-04, P-05)
 
 Expected versions are listed in `DECISIONS.md` §8.2; the versions actually installed are recorded at M0. Tools required in WSL2: `clang`, `ld.lld`, `llvm-objdump`, `llvm-readelf`, `llvm-nm`, GNU `make`, `xorriso`, `qemu-system-x86_64`, `gdb`, `sha256sum`, `tar` with xz support, `curl` **or** `wget`, `python3`, and a host C compiler reachable as `cc` (the Limine host utility's Makefile uses it). Git is not required in WSL and is never run there.
+
+**LLVM tool names (normative for `check_env.sh`, the Makefile defaults and the host tests).** Each of the five LLVM tools may be installed under its plain name or with the suffix `-18` (`clang-18`, `ld.lld-18`, `llvm-objdump-18`, `llvm-readelf-18`, `llvm-nm-18`). A tool is resolved by trying the plain name first and the `-18` name second. `check_env.sh` prints the resolved path and version of each and fails if a tool is found under neither name or if the five resolved tools do not all report the same LLVM version. The host tests resolve `llvm-objdump`, `llvm-readelf` and `llvm-nm` by the same rule. `llvm-objcopy` and `llvm-ar` are not used by this specification. On the owner's machine the second review found `clang` and `ld.lld` under their plain names and the three utilities under neither plain name; the owner reports all of them under the `-18` names (`DECISIONS.md` §8.2).
 
 ### 2.1 Compiler flags
 
@@ -109,7 +111,7 @@ Assembly lives in `.S` files (preprocessed), AT&T syntax, assembled by Clang's i
 | `CR0` | `PE`, `ET`, `WP`, `PG` set; all other bits clear from revision 5 | Write protection is on; rodata writes fault |
 | `CR4` | `PAE` only (plus `LA57` only if requested) | No SSE; no 5-level paging |
 | `EFER` | `LME`, `LMA`; `NX` only if the processor supports it | **AOS requires NX**: boot step 4 checks it and panics if it is absent (§5). The reference CPU model `qemu64` provides it. |
-| Interrupt sources | Legacy PIC IRQs masked; I/O APIC redirection entries masked; local APIC enabled with spurious vector register `0x1FF` and LVT entries masked | Maskable hardware interrupts do not arrive in Sprint 1 because `IF=0` and sources are masked. **NMI, machine check and other non-maskable events can still occur**, so gates and stacks for vectors 2 and 18 exist; a handler for vector 255 exists too. |
+| Interrupt sources | Legacy PICs, if present, have all IRQs masked. For each I/O APIC, redirection entries whose delivery mode is Fixed, Lowest Priority, NMI or ExtINT are masked; **entries with other delivery modes are left as the firmware set them**. The local APIC, if present, is enabled with spurious vector register `0x1FF`; its LVT entries with those same four delivery modes are masked, and others are left as set by firmware. | Sprint 1 keeps `IF=0`, so no maskable interrupt is delivered whatever the firmware left unmasked. **NMI, SMI, machine check and other non-maskable events can still occur**, so gates and stacks for vectors 2 and 18 exist, and every vector 32–255 has a handler. |
 | Stack | At least 64 KiB (or the requested size) in bootloader-reclaimable memory; a zero return address is pushed | Entry point can be a C function; MUST NOT return |
 | General registers | All general-purpose registers other than `RIP` and `RSP` are zero at entry | — |
 | Kernel mapping | Segments mapped at or above `0xFFFFFFFF80000000`; `PF_X` controls execute, `PF_W` controls write, read always allowed | Linker script must produce separate segments (§4.2) |
@@ -151,7 +153,7 @@ Identifiers this specification relies on, all present in that file: `LIMINE_BASE
 | Stack size | revision 0, `stack_size = 65536` | 64 KiB boot stack | Missing → continue (64 KiB is the protocol minimum) |
 | Paging mode | **revision 1**, `mode = max_mode = min_mode = LIMINE_PAGING_MODE_X86_64_4LVL` | Guarantee 4-level paging | Missing, or reported mode is not 4-level → panic `boot: unsupported paging mode` |
 
-Request revisions are per-feature numbers and are unrelated to the protocol base revision. Every request field not listed above is zero.
+Request revisions are per-feature numbers and are unrelated to the protocol base revision. Every request carries the identifier the vendored header defines for it (`.id = LIMINE_…_REQUEST_ID`) and the `revision` shown above; `response` is initialised to null and is written only by the bootloader; every other option or reserved field is zero.
 
 Each request object MUST be `static volatile`, 8-byte aligned, initialised, and carry `__attribute__((used, section(".limine_requests")))`. Markers use sections `.limine_requests_start` and `.limine_requests_end`.
 
@@ -240,7 +242,7 @@ There is no guard page under the boot stack in Sprint 1 (known limitation; fixed
 | Usable memory at or above 1 MiB | Usable | Firmware | Hold the PMM bitmap; be allocated by the PMM | — |
 | Usable memory below 1 MiB | Usable | Firmware | Nothing | Allocate or write |
 | ACPI reclaimable, ACPI NVS, Reserved-mapped, Framebuffer | As named | Firmware / Limine | Nothing in Sprint 1 | Write |
-| Reserved, Bad memory | As named | Firmware | Nothing | Touch (not mapped in the HHDM) |
+| Reserved, Bad memory | As named | Firmware | Nothing | Touch it — whether or not an access would fault (§3.1: such memory is not mapped as such, but may share a rounded page with a mapped region) |
 
 Consequence: in Sprint 1 the kernel writes only to (a) its own data/bss segment, (b) the boot stack, (c) the PMM bitmap, and (d) frames obtained from the PMM. Any other write is a defect.
 
@@ -322,7 +324,7 @@ _Noreturn void panic(const char *fmt, ...) __attribute__((format(printf, 1, 2)))
 _Noreturn void hcf(void);
 ```
 
-`panic` disables interrupts, prints the block in §12.2, then, in a test kernel, ends the test as failed (§12.4), or calls `hcf()` otherwise. A panic raised while a panic is already in progress goes straight to `hcf()`.
+`panic` is an *ending event* (§12.4). If the run is already ending — a panic, a fatal exception or test finalisation is in progress — it goes straight to `hcf()` and prints nothing. Otherwise it marks the run as ending, disables interrupts, prints the block of §12.2, and then, in a test kernel, prints `RESULT FAIL` and exits (§12.4), or calls `hcf()` in a normal kernel.
 
 `KASSERT` is always enabled in Sprint 1.
 
@@ -417,22 +419,24 @@ Stack alignment argument (must hold; tested by review): in 64-bit mode the CPU a
 
 ### 9.5 Dispatch policy in Sprint 1 (normative)
 
-`CR0`, `CR2`, `CR3`, `CR4` are read on entry to the handler, before anything is printed.
+**First, before anything is printed, every arriving vector applies the ending guard of §12.4**: if the run is already ending, the handler calls `hcf()` at once — no dump, no breakpoint line, no return. This holds for all 256 vectors, armed or not, #BP included.
 
-In a **test kernel with an armed expectation** (§12.4), the expectation takes precedence over the default action of **every** vector, including #BP:
+Otherwise `CR0`, `CR2`, `CR3`, `CR4` are read, and:
+
+In a **test kernel with an armed expectation**, the expectation takes precedence over the default action of **every** vector, including #BP. The run is marked as ending on entry:
 
 | Vector arrives | Action |
 |---|---|
-| Equal to the armed vector | Print the dump; print `FAULT-OK`; disarm; `ktest_finish()` |
-| Different from the armed vector | Print the dump; print `FAULT-WRONG`; mark the test failed; disarm; `ktest_finish()` |
+| Equal to the armed vector | Mark ending; dump; `FAULT-OK`; disarm; finish the test (§12.4) |
+| Different from the armed vector | Mark ending; dump; `FAULT-WRONG`; mark the test failed; disarm; finish the test |
 
-Otherwise (normal kernel, or no expectation armed):
+Otherwise (normal kernel, or nothing armed):
 
 | Vector | Action |
 |---|---|
-| 3 (#BP) | Print `[aos] breakpoint at rip=0x<16 hex>` and return; execution continues after the `int3` with every register unchanged |
-| Any other 0–31 | Print the dump (§12.3), then `panic("unhandled exception %lu (%s)")` |
-| 32–255 | `panic("unexpected interrupt vector %lu")` |
+| 3 (#BP) | Print `[aos] breakpoint at rip=0x<16 hex>` and return; execution continues after the `int3` with every register unchanged. The run is **not** marked as ending. |
+| Any other 0–31 | Mark ending; dump (§12.3); panic block with reason `unhandled exception <n> (<name>)`; then as for a panic (§7.2) |
+| 32–255 | Mark ending; panic block with reason `unexpected interrupt vector <n>`; then as for a panic |
 
 A software `int n` does not push an error code, so tests raise real faults and never use `int` for an error-code vector.
 
@@ -510,7 +514,7 @@ All panics raised here have a reason beginning `pmm: `.
   - `count == 0`: returns immediately, without examining `first`.
   - Otherwise `first` must be 4 KiB-aligned; with `f = first / 4096`, it must hold that `f < highest_frame` and `count <= highest_frame − f` (checked in this form, so nothing overflows).
   - Every frame `f … f + count − 1` must satisfy the conditions of `pmm_free`. **All of them are validated before any bit is changed.**
-  - On any violation: panic, with the bitmap and counters unchanged. Otherwise all the bits are cleared.
+  - On any violation: panic, with the bitmap and counters unchanged. Otherwise all the bits are cleared and `free_frames` and `allocated_frames` are updated by `count`; the hint is unchanged.
   - The frames need not have been obtained by one `pmm_alloc_contig` call.
 - **Limitation**: a stale address whose frame has since been allocated again cannot be told apart from a valid free.
 - Not re-entrant and not thread-safe; Sprint 1 is single-CPU with interrupts disabled.
@@ -550,7 +554,7 @@ All panics raised here have a reason beginning `pmm: `.
 | `make clean` | Removes `build/` except `build/cache/` |
 | `make distclean` | Removes `build/` entirely |
 
-Overridable variables: `CC` (default `clang`), `LD` (`ld.lld`), `QEMU` (`qemu-system-x86_64`), `QEMU_MEM` (`256M`), `TEST`.
+Overridable variables: `CC` (default `clang`), `LD` (`ld.lld`), `QEMU` (`qemu-system-x86_64`), `QEMU_MEM` (`256M`), `TEST`. The test harness always passes `CC` and `LD` as resolved by the name rule of §2; a person building by hand where only the `-18` names exist passes `CC=clang-18 LD=ld.lld-18`. The Makefile itself calls no other LLVM tool.
 
 The Makefile MUST NOT invoke `git` (P-06) and MUST fail with a clear message if a required tool is missing.
 
@@ -684,29 +688,46 @@ void aos_test_main(void);              /* defined by the test case */
 void ktest_check(bool ok, const char *expr, const char *file, int line);
 #define KTEST_CHECK(cond) ktest_check((cond), #cond, __FILE__, __LINE__)
 void ktest_expect_fault(uint8_t vector);
-_Noreturn void ktest_finish(void);
+_Noreturn void ktest_finish(void);     /* normal completion; called by the kernel after aos_test_main returns */
 ```
 
-State: a **failed** flag, which once set is never cleared, and at most one **armed** expectation.
+**State** (behaviour is normative; how it is stored is not):
+
+- **failed** — set by a failed check or a wrong or missing fault; never cleared.
+- **armed** — at most one expected vector.
+- **ending** — set when the run starts to end; never cleared. It exists in normal kernels too, where it is the "panic in progress" state of §7.2.
+
+**Events and the ending guard.** A run ends through exactly one of three kinds of event. Each event **checks `ending` first, before producing any output**; the steps it then performs are its *ending sequence* and are not checked again.
+
+| Event | If `ending` is clear | If `ending` is already set |
+|---|---|---|
+| **Normal completion**: `aos_test_main` returns and the kernel calls `ktest_finish()` (a test case may also call it itself) | Set `ending`. If an expectation is armed: print `@@AOS-TEST@@ FAULT-MISSING vector=<a>` and set **failed**. Print the `RESULT` line; write the exit value; `hcf()`. | `hcf()` immediately; no output |
+| **Panic**: any call to `panic`, including `ktest:` panics | Set `ending`. Print the panic block; print `@@AOS-TEST@@ RESULT FAIL <aos_test_name>`; write `AOS_EXIT_FAIL`; `hcf()`. | `hcf()` immediately; no output |
+| **A vector arrives**, expectation armed, vector equal | Set `ending`. Dump; `@@AOS-TEST@@ FAULT-OK vector=<n>`; disarm; print the `RESULT` line; write the exit value; `hcf()`. | `hcf()` immediately; no output |
+| **A vector arrives**, expectation armed, vector different | Set `ending`. Dump; `@@AOS-TEST@@ FAULT-WRONG expected=<a> got=<n>`; set **failed**; disarm; print `RESULT FAIL`; write `AOS_EXIT_FAIL`; `hcf()`. | `hcf()` immediately; no output |
+| **A vector arrives**, nothing armed, #BP | Print the breakpoint line and return. `ending` stays clear. | `hcf()` immediately; no output, no return |
+| **A vector arrives**, nothing armed, any other vector | Set `ending`. Dump (vectors 0–31); panic block; `RESULT FAIL`; write `AOS_EXIT_FAIL`; `hcf()`. | `hcf()` immediately; no output |
+
+The `RESULT` line is `@@AOS-TEST@@ RESULT PASS <aos_test_name>` if **failed** is clear, otherwise `@@AOS-TEST@@ RESULT FAIL <aos_test_name>`. The exit value is `AOS_EXIT_PASS` or `AOS_EXIT_FAIL` to match.
+
+Other rules:
 
 | Rule | Behaviour |
 |---|---|
-| Start | Boot step 9 prints `@@AOS-TEST@@ BEGIN <aos_test_name>`, calls `aos_test_main()`, and when that returns calls `ktest_finish()` |
+| Start | Boot step 9 prints `@@AOS-TEST@@ BEGIN <aos_test_name>` and calls `aos_test_main()` |
 | `KTEST_CHECK` fails | Prints `@@AOS-TEST@@ CHECK-FAILED <expr> (<file>:<line>)`; sets **failed**; execution continues |
 | `ktest_expect_fault(v)` | `v` must be below 32, else `panic("ktest: invalid vector")`. If an expectation is already armed, `panic("ktest: expectation already armed")`. Otherwise arms `v`. Any vector 0–31 may be armed, including 3. |
-| Armed vector arrives | Dump, then `@@AOS-TEST@@ FAULT-OK vector=<n>`; disarm; `ktest_finish()` |
-| A different vector arrives while armed | Dump, then `@@AOS-TEST@@ FAULT-WRONG expected=<a> got=<n>`; set **failed**; disarm; `ktest_finish()` |
-| A vector other than #BP arrives while nothing is armed | Dump, panic block; the panic ends the test as failed (next row) |
-| `panic` in a test kernel | Panic block, then `@@AOS-TEST@@ RESULT FAIL <aos_test_name>`, then exit with `AOS_EXIT_FAIL` |
-| `ktest_finish()` | **The single normal finalisation path.** If an expectation is still armed: print `@@AOS-TEST@@ FAULT-MISSING vector=<a>` and set **failed**. Then print `@@AOS-TEST@@ RESULT PASS <aos_test_name>` if **failed** is clear, otherwise `… RESULT FAIL …`; write `AOS_EXIT_PASS` or `AOS_EXIT_FAIL` to the exit device; `hcf()`. |
 
-Consequences that tests rely on:
+**What a run prints** (this replaces the earlier unconditional "exactly one `RESULT`" statement):
 
+- An ending sequence that **completes** prints exactly one `RESULT` line and writes the exit value exactly once.
+- An ending sequence that is **interrupted** by another event (a fault while printing, for example) stops in `hcf()`. Such a run prints **at most one** `RESULT` line — possibly none — and never two; unless the exit value had already been written, QEMU does not exit.
+- Therefore the harness accepts a run only if it sees the expected host exit status **and exactly one** `RESULT` line with the expected verdict. No `RESULT` line, more than one, or a timeout is a failure, whatever else was printed.
 - A failed check is sticky: a later matching fault, or a normal return, still yields `RESULT FAIL` and host status 35.
-- Every test kernel run that reaches finalisation prints exactly one `RESULT` line.
-- If finalisation is entered a second time (for example a fault inside it), the kernel goes straight to `hcf()`.
 
-How the kernel implements this internally (helper names, where the state lives) is not normative.
+Interrupted ending sequences cannot be provoked from test code, because the code that would have to fault is the kernel's own. They are therefore covered by mandatory review (RV-K3-03 in `TEST_PLAN.md`), not by a runtime test.
+
+How the kernel implements this (helper names, where the state lives, whether the three events share code) is not normative.
 
 ### 12.5 Exit codes: guest value versus host status (normative)
 
@@ -820,7 +841,7 @@ The interrupt-frame **layout** (§9.4), the descriptor encodings (§8, §9.1) an
 | V-08 | A corrupted stack pointer followed by an exception reaches the #DF handler on IST1 | Not observed. | **Stretch**, K3 |
 | V-09 | Memory above 4 GiB appears as Usable entries with more than about 3 GiB of RAM | Not observed. | K5 |
 | V-10 | The Limine release asset matches its SHA-256 and contains the files in §11.2; the header matches its SHA-256; the release pins the same header commit and supports base revision 6 | **Reproduced independently**: by Codex (review evidence E01, E02, E03: downloads, hashes, archive inventory, source inspection) and, for the archive, by a separate download by the architect. This is evidence of artifact identity and source pairing only. | Owner records the disposition of B-02 |
-| V-11 | The whole toolchain is installed in WSL2 Ubuntu 24.04 at the versions in `DECISIONS.md` §8.2 | **Owner-reported** on 2026-11-12 for Clang, LLD, QEMU, GDB and Make. No command output has been filed yet; the other tools are unreported. | M0 (`check_env.sh` output; clears B-01) |
+| V-11 | The whole toolchain is installed in WSL2 Ubuntu 24.04 at the versions in `DECISIONS.md` §8.2 | **Partly observed.** Codex's second review (evidence R3-E05, version inspection only): Ubuntu 24.04.5, Clang and LLD 18.1.3, QEMU 8.2.2, GDB 15.1, Make 4.3, xorriso 1.5.6, `cc` 13.3.0, Python 3.12.3 present; `llvm-objdump`, `llvm-readelf` and `llvm-nm` not found under their plain names. **Owner-reported** (2026-11-13): `clang-18`, `ld.lld-18`, `llvm-objdump-18`, `llvm-readelf-18`, `llvm-nm-18`, `llvm-objcopy-18` and `llvm-ar-18` are in PATH. The name rule of §2 covers both. No output is filed yet. | M0 (`check_env.sh` output; clears B-01) |
 | V-12 | The assembly flag set of §2.1 assembles `.S` files, and the link line of §2.2 links the kernel | **Not performed.** | K1 |
 | V-13 | The release's detached signature is valid | **Not performed.** Not required by any gate; recorded so that a matching hash is not mistaken for signature verification. | Optional |
 | V-14 | The kernel boots under the pinned Limine release with base revision 6 (runtime compatibility) | **Not performed.** | K1 |

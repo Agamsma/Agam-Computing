@@ -1,6 +1,6 @@
 # AGENTS.md — Operating rules for Codex
 
-> **Status: Draft v0.1, revision 3 — NOT APPROVED.** Every gate is closed (`docs/DECISIONS.md` §1). Your current assignment is the re-review described in `docs/CODEX_REVIEW_BRIEF.md`. Do not write test, harness or runner code yet.
+> **Status: Draft v0.1, revision 4 — NOT APPROVED.** Every gate is closed (`docs/DECISIONS.md` §1). Your current assignment is the focused re-review of revision 4 described in `docs/CODEX_REVIEW_BRIEF.md`. Do not write test, harness, runner or checker code yet.
 
 You are the **independent test and review agent** for the Agam Computing Ecosystem. Claude Code is the implementation agent. The architect maintains `docs/`. The project owner approves everything and alone controls `main`, tags and GitHub.
 
@@ -13,7 +13,7 @@ Your value comes from independence: you verify against the **specification**, no
 | `docs/CODEX_REVIEW_BRIEF.md` | Your current task |
 | `docs/DECISIONS.md` | Gates (§1), owner decisions (§3), evidence record (§8), blockers (§9), finding-resolution table (§10) |
 | `docs/ARCHITECTURE.md` | Layout, ownership, Git rules, integration flow |
-| `docs/TEST_PLAN.md` | Runner contract (§4), test catalogue (§5, §6), review procedure (§7), gate procedure (§8) |
+| `docs/TEST_PLAN.md` | The two kinds of verification (§2.5), runner contract (§4), test tables (§5, §6), review procedure (§7), gate procedure (§8), test inventory (Appendix A) |
 | `docs/ROADMAP.md` | Your tasks (`*-X*` IDs), scope and acceptance criteria |
 | `docs/AOS_KERNEL_SPEC.md` / `docs/AGAMLANG_SPEC.md` | The behaviour you test. Normative sections are binding. |
 
@@ -48,11 +48,15 @@ agam-dev/reports/claude/**                                                      
 
 This covers additions, changes, deletions and both sides of a rename. Every file you add has mode `100644`; no symbolic links or submodules. **Never fix implementation code or a specification**: write a finding. Never change a test merely to make it pass.
 
-Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M0-X*` items of `docs/ROADMAP.md` §2.2 are allowed — the environment check, the manifest checker, the runner scaffolding with its self-tests, and the pinned test dependency. No QEMU harness, kernel case or language test.
+**You own the catalogue, not the inventory.** `agam-dev/verify/catalogue.json` must list, for every suite, exactly the test IDs and classes of `docs/TEST_PLAN.md` Appendix A. To add, drop, move or reclassify a test, file a proposal; the catalogue changes only after the document does.
+
+**Your tools do not judge your own tip.** At a gate the owner runs the checkers and reads the inventory from a read-only copy exported from the milestone's baseline (`docs/TEST_PLAN.md` §8.1). Any change you make under `agam-dev/verify/` is a verification-path change: it needs two readings by parties other than you — the architect and Claude Code (`RV-<milestone>-VP`; O-26) — before the trial merge, and becomes trusted only from the next baseline. Report your tip first when you have changed these files, so that both readers read the same commit. At M0, where no baseline tools exist, the owner's by-hand check and RV-M0-01 take their place (§8.6).
+
+Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M0-X*` items of `docs/ROADMAP.md` §2.2 are allowed — the environment check, the gate tools (`check_ownership.py`, `check_inventory.py`, `gate_manifest.ps1`), the runner scaffolding with its self-tests, and the pinned test dependency. No QEMU harness, kernel case or language test.
 
 ## 4. Git rules (owner's instructions — non-negotiable)
 
-1. **Run git only with Git for Windows. Never run any git command inside WSL.** Nothing you write for WSL may call git: `check_env.sh`, `check_ownership.py` and `run.py` are Git-free and work from files that Git for Windows produced.
+1. **Run git only with Git for Windows. Never run any git command inside WSL.** Nothing you write for WSL may call git: `check_env.sh`, `check_ownership.py`, `check_inventory.py` and `run.py` are Git-free and work from files that Git for Windows produced. `gate_manifest.ps1` runs on Windows and uses read-only git commands only.
 2. **Before every commit**, run and read:
    ```
    git worktree list
@@ -73,7 +77,7 @@ Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M
 
 1. Never report `PASS`, "verified" or "works" for anything you did not run in this session. Use the evidence block of `docs/TEST_PLAN.md` §2.2.
 2. A test that could not run is `SKIPPED` with a reason. A required test that is skipped or missing **fails** the gate; never hide it.
-3. Source inspection and arithmetic are reported as such, not as build, boot or runtime results.
+3. Source inspection and arithmetic are reported as such, not as build, boot or runtime results. "Resolved" for a document finding is a statement about the text; say so, and keep it apart from implementation-level verification (`docs/TEST_PLAN.md` §2.5).
 4. Never invent output, exit statuses, tool versions or benchmark numbers.
 5. Never assume a tool is installed; `agam-dev/verify/check_env.sh` is the authority.
 6. Say which number you mean: the **guest exit value** (`0x10`, `0x11`) or the **host exit status** (33, 35).
@@ -84,7 +88,9 @@ Within a gate's scope, stay inside it: during the bootstrap (G-BOOT) only the `M
 - **Expected values never come from the implementation.** Write `keywords_expected.json`, `codes_expected.json`, `messages_expected.json`, golden ASTs, conformance outputs and rendered diagnostics by hand from the specification, and assert that the implementation equals them. Do not import an implementation table to decide what to expect, and do not save implementation output as a golden file.
 - Hinglish expectations follow the **proposed** wording and change only after an approved specification change.
 - For each new test, demonstrate once that it can fail.
-- Kernel tests: pass means host exit status 33 **and** the required serial lines; expected-failure tests need host status 35 **and** their panic or `RESULT FAIL` lines. Host status 0, a timeout or missing output is a failure.
+- Kernel tests: pass means host exit status 33 **and** the required serial lines, with **exactly one** `RESULT` line in the log (zero or two fail); expected-failure tests need host status 35 **and** their panic or `RESULT FAIL` lines. Host status 0, a timeout or missing output is a failure.
+- LLVM utilities are resolved by the name rule of `docs/AOS_KERNEL_SPEC.md` §2 (plain name, then `-18`); pass the resolved `CC` and `LD` to `make`.
+- Language goldens are written from Appendices A, B and C of `docs/AGAMLANG_SPEC.md`: B fixes variant, span and arguments for every catalogue row. If you have to guess a value, that is a finding, not a test.
 - In-kernel cases include only the test-facing headers of `docs/AOS_KERNEL_SPEC.md` §13.1; they raise faults with inline assembly and never use `int n` for an error-code vector.
 - **Required before stretch.** Double-fault, permission-fault and allocator invalid-argument tests are stretch; the review items that replace them (RV-K3-02, RV-K4-01) are mandatory.
 - Do not demand a particular internal design: test only what the specification makes normative.

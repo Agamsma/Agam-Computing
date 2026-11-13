@@ -2,8 +2,8 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 3 — NOT APPROVED.** Revised in response to the independent review; findings AR-02, AR-08, AR-18, AR-23 touch this document and are *addressed in draft — pending independent re-review* (`DECISIONS.md` §10). Nothing here authorises implementation. |
-| Date | 2026-11-12 (revision 3) |
+| Status | **Draft v0.1, revision 4 — NOT APPROVED.** A document-only correction pass after the second independent review. This document changes for AR-25, AR-26 and AR-27 (layout, integration flow, tool names); those findings are *addressed in draft — pending independent re-review* (`DECISIONS.md` §10.2). Nothing here authorises implementation. |
+| Date | 2026-11-13 (revision 4) |
 | Owner | Project owner (approves); Architect (maintains) |
 | Related | `DECISIONS.md`, `ROADMAP.md`, `AOS_KERNEL_SPEC.md`, `AGAMLANG_SPEC.md`, `TEST_PLAN.md`, `CODEX_REVIEW_BRIEF.md`, `../CLAUDE.md`, `../AGENTS.md` |
 
@@ -100,7 +100,7 @@ In Phase 1, AOS and AgamLang share no code, only the repository, the workflow an
 │   ├── examples/                Claude — sample .agam programs
 │   └── tests/                   Codex  — unit, golden, conformance, fusion, fuzz
 └── agam-dev/                    Developer OS (workflow tooling for now)
-    ├── verify/                  Codex  — check_env.sh, check_ownership.py, gate_manifest.ps1, run.py, catalogue.json
+    ├── verify/                  Codex  — check_env.sh, check_ownership.py, check_inventory.py, gate_manifest.ps1, run.py, catalogue.json
     ├── reports/
     │   ├── claude/              Claude — task reports, evidence, proposals
     │   └── codex/               Codex  — evidence, reviews, proposals
@@ -109,10 +109,13 @@ In Phase 1, AOS and AgamLang share no code, only the repository, the workflow an
 .gate/                           untracked, ignored — manifests and binding files of a gate in progress
 ```
 
+Outside every worktree (`D:\Agam-Computing\.gate-tools\<BASE>\`; O-27): the owner's read-only export of the gate tools and of `docs/TEST_PLAN.md` as they exist in the milestone's baseline (`TEST_PLAN.md` §8.1). It is not part of the repository.
+
 Rules that make the layout work:
 
 - **Build → test contract.** `agam-os/Makefile` (Claude) exposes `iso [TEST=<case>]`, `run`, `debug`, `clean`, `test`. The harness (Codex) calls `make -C agam-os iso …` and launches QEMU itself. Neither side edits the other's files; the contract is in `AOS_KERNEL_SPEC.md` §11 and `TEST_PLAN.md` §4.
 - **In-kernel test cases belong to Codex.** `agam-os/tests/cases/<case>.c` is written against the public headers in `agam-os/kernel/include/aos/` and compiled into a test kernel by the Makefile.
+- **The required-test inventory is a document.** `TEST_PLAN.md` Appendix A lists every test ID with its suite and class. Codex's `catalogue.json` must equal it; an agent cannot add, drop, move or reclassify a test by editing the catalogue (AR-26).
 - **`docs/` has one writer.** Agents request spec changes through proposal files in their own `agam-dev/reports/<agent>/proposals/` folder.
 - **Empty folders are not stored by Git** (R-23): the project folders appear in a worktree once their first files are committed and merged.
 - **Only test-facing interfaces are fixed.** Inside `agam-os/kernel/` and `agam-lang/src/agamlang/` the file split is the implementer's choice, apart from the headers and modules the specifications name as normative.
@@ -220,16 +223,28 @@ The two agents' path sets are disjoint. Additions, modifications, deletions and 
         └─► Claude implements from the spec         ─► tip TIP_C (exact SHA, clean worktree)
         │
  owner, Git for Windows:
+        live check: main, agent/claude, agent/codex equal BASE, TIP_C, TIP_X; worktree clean
+        TOOLS: gate tools and TEST_PLAN.md exported from BASE to a read-only folder
+               outside every worktree; blob IDs re-checked           (M0: by-hand check instead)
         raw manifests BASE→TIP_C and BASE→TIP_X (paths, statuses, modes, blob IDs)
-        ownership check of each manifest — checker taken from BASE
-        gate/<milestone> created from BASE; both tips merged
-        merge result compared record for record with the two manifests
+        ownership check of each manifest                              — tool from TOOLS
+        a change under agam-dev/verify/ needs two readings (architect, Claude Code) — RV-<milestone>-VP
+        gate/<milestone> created from BASE; both tips merged → GATE_HEAD
+        merge result compared record for record with the two manifests — tool from TOOLS
+        candidate catalogue compared with the trusted inventory       — tool from TOOLS
         │
- WSL2:  run.py gate <milestone> — refuses to run unless the working tree equals the merged commit
+ WSL2:  run.py gate <milestone> — refuses to run unless the working tree equals GATE_HEAD
+        │
+ owner: summary compared with the trusted inventory                   — tool from TOOLS
+        live check repeated
         │
         ├─ any failure: gate branch deleted, main untouched, new tips, start again
-        └─ pass + reviews + owner's acceptance: gate record committed, main fast-forwarded by the owner
+        └─ pass + reviews + owner's acceptance:
+               record commit GATE_REC (delta checked: gate record files only)
+               live check repeated; main fast-forwarded and tagged by the owner
 ```
+
+The tools that judge a tip are never taken from that tip, and the list of tests that must pass is never taken from it either. The Git-free tree check inside the runner shows that the files tested are the files of `GATE_HEAD`; it does not show that a branch still points there, which is why the live check is made three times (`TEST_PLAN.md` §8.5).
 
 Results are valid only for the exact baseline, tips and merge commit they name; any change makes them void.
 
@@ -244,7 +259,8 @@ Results are valid only for the exact baseline, tips and merge commit they name; 
 | Bootloader | Limine **12.9.6** | C-03; pin P-02; identity evidence reproduced, disposition pending (B-02) |
 | Boot protocol | Limine protocol, **base revision 6** | O-03 (conditional) |
 | Protocol header | `limine-protocol` commit `6e85ddd…`, vendored | P-02 |
-| Compiler / linker | Clang 18.1.3, LLD 18.1.3, target `x86_64-unknown-none-elf` | C-04; flags P-04; versions owner-reported |
+| Compiler / linker | Clang 18.1.3, LLD 18.1.3, target `x86_64-unknown-none-elf` | C-04; flags P-04; versions observed by Codex and owner-reported |
+| LLVM binary utilities | `llvm-objdump`, `llvm-readelf`, `llvm-nm`, `llvm-objcopy`, `llvm-ar` 18.1.3 — under those names or with the `-18` suffix | Owner-reported under the `-18` names (2026-11-13); resolved by `check_env.sh` |
 | Assembler | Clang integrated assembler, `.S`, AT&T syntax | P-05 |
 | Emulator / debugger | QEMU 8.2.2, GDB 15.1 | C-05 |
 | Build | GNU Make 4.3; never invokes git | P-06 |
@@ -253,7 +269,7 @@ Results are valid only for the exact baseline, tips and merge commit they name; 
 | AgamLang host | CPython ≥ 3.11 (3.12.3 on Ubuntu 24.04), standard library only at run time | P-20 |
 | AgamLang tests | `pytest` (development dependency) | P-27 |
 
-Versions are those offered by Ubuntu 24.04 on 2026-11-12. The owner reports Ubuntu 24.04.5 with Clang 18.1.3, LLD 18.1.3, QEMU 8.2.2, GDB 15.1 and Make 4.3 installed; the recorded evidence comes at M0 (B-01).
+Versions are those offered by Ubuntu 24.04 on 2026-11-12. The owner reports Ubuntu 24.04.5 with Clang 18.1.3, LLD 18.1.3, QEMU 8.2.2, GDB 15.1 and Make 4.3 installed, and the second review observed the same versions in WSL (`DECISIONS.md` §8.2). The recorded evidence comes at M0 (B-01).
 
 ---
 
@@ -303,15 +319,18 @@ Exact values are in `DECISIONS.md` §8.
 | Item | By | Result |
 |---|---|---|
 | Independent architecture review of revision 2 (commit `349c48a`) | Codex | Not ready: 0 Critical, 14 Major, 8 Minor, 2 Informational. Report untracked in `codex-worktree`; cited by commit and SHA-256. |
+| Independent re-review of revision 3 (commit `fd2670d`) | Codex | Not ready for owner approval. Of AR-01…24: 19 Resolved, 5 Partially Resolved, at document level. New: 7 Major, 2 Minor (AR-25…33). Report untracked; cited the same way. |
+| Read-only exercise of the manifest and tree-listing flags; WSL tool versions | Codex (second review, evidence R3-E03, R3-E05) | Flags behave as specified on the review commits. Versions as in `DECISIONS.md` §8.2; unversioned LLVM utility names not found. |
 | Limine asset and header hashes; release/header pairing; base revision | Codex (downloads, hashes, source search); architect (clone, and a second archive download) | Reproduced. Identity and pairing only. |
 | GDT, TSS, IDT and interrupt-frame arithmetic | Codex (probe and manuals) | Consistent. Not a CPU execution result. |
 | Exit-value formula | Codex (QEMU 8.2.2 source); architect (boot sectors on QEMU 8.2.2 in a scratch sandbox) | Guest `0x10` → host 33; `0x11` → 35; reset → 0 |
 | C flag set and header identifiers | Architect, throwaway probe, Clang 18.1.3, scratch sandbox | Compiles, zero warnings. Not linked; no assembly. |
-| Branch and worktree state for revision 3 | Architect, by reading the repository's `HEAD` and ref files; **no git command was run** | `ecosystem` on `review/architecture-v0.1` at `349c48a`; `main` and `agent/claude` at `4b2edd6`; `agent/codex` at `349c48a` |
-| Owner's WSL2 toolchain | Owner (reported) | Ubuntu 24.04.5; Clang 18.1.3; LLD 18.1.3; QEMU 8.2.2; GDB 15.1; Make 4.3. No output filed yet. |
-| **Not performed by anyone** | — | Any project build, link, ISO, boot, exception, allocator or interpreter run; signature check of the Limine asset |
+| Branch and worktree state for revision 4 | Architect, by reading the repository's `HEAD`, ref files and objects; **no git command was run** | `ecosystem` on `review/architecture-v0.1` at `fd2670d`, the nine documents identical to that commit before editing; `agent/codex` at `fd2670d`; `main` and `agent/claude` at `4b2edd6` |
+| Owner's WSL2 toolchain | Owner (reported) | Ubuntu 24.04.5; Clang 18.1.3; LLD 18.1.3; QEMU 8.2.2; GDB 15.1; Make 4.3; `clang-18`, `ld.lld-18`, `llvm-objdump-18`, `llvm-readelf-18`, `llvm-nm-18`, `llvm-objcopy-18`, `llvm-ar-18` in PATH. No output filed yet. |
+| Revision 4 document checks | Architect, scratch scripts | Cross-document identifier, table, inventory and catalogue consistency; arithmetic of the worked examples. Listed in the revision's change summary. Not a substitute for re-review. |
+| **Not performed by anyone** | — | Any project build, link, ISO, boot, exception, allocator or interpreter run; any gate step other than the read-only flags above; signature check of the Limine asset |
 
-No kernel, interpreter, harness or test code was written. Nothing was committed, merged, tagged or pushed for revision 3, and Git configuration was not changed.
+No kernel, interpreter, harness, test or checker code was written. Nothing was committed, merged, tagged or pushed for revision 4, and Git configuration was not changed. The review reports and their evidence were not modified.
 
 ---
 
@@ -321,21 +340,21 @@ Blockers (full table: `DECISIONS.md` §9). None is cleared by this revision.
 
 | Blocker | Gate |
 |---|---|
-| B-07 process contract (review findings AR-01…04) — pending re-review | G-BOOT |
+| B-07 process contract (AR-01…04, AR-15, AR-18, AR-25…27) — pending re-review | G-BOOT |
 | B-04 approved documents on `main` | G-BOOT |
 | B-01 toolchain evidence; B-03 attribution evidence | M0 acceptance |
 | B-02 owner's disposition of the Limine pin evidence; B-08 kernel contract — pending re-review | G-AOS |
 | B-06 Hinglish wording; B-09 language semantics; B-10 diagnostics — pending re-review and owner review | G-LANG |
-| B-05 independent review with no Critical or Major finding open | G-AOS, G-LANG |
+| B-05 independent review with no Critical or Major finding open, judged per track (O-23) | G-AOS for the AOS track; G-LANG for the language track |
 
 | Risk | Summary | Mitigation |
 |---|---|---|
 | R-02 | Git run from WSL could prune the Windows worktrees | Git only on Windows; WSL tools are Git-free |
 | R-03 | CRLF checkouts can break scripts, Makefiles and golden files | `.gitattributes` first; content hashes checked before every gate run |
-| R-11 | Two agents editing the same file | Manifest checker; merge verified record by record |
+| R-11 | Two agents editing the same file | Manifest checker run from the trusted copy; merge verified record by record |
 | R-12 | Unverified claims | Acceptance only from a gate run bound to exact commits |
 | R-19 | Tests copying expectations from the implementation | Independent hand-written fixtures |
-| R-25 | Stale gate results | Results void when any SHA or tool version changes |
-| R-26 | A branch weakening its own check | Checker taken from the baseline |
+| R-25 | Stale gate results | Live refs checked before capture, after the run and before promotion; results void when any SHA or tool version changes |
+| R-26 | A branch weakening its own check, or dropping a required test | Checkers and the test inventory exported from the baseline, outside every worktree |
 
 The full register is `ROADMAP.md` §8.

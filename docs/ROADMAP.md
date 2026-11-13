@@ -2,10 +2,10 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft v0.1, revision 3 — NOT APPROVED.** Addresses review findings AR-01, AR-03, AR-04, AR-15, AR-19, AR-20 (`DECISIONS.md` §10); all are *addressed in draft — pending independent re-review*. No gate is open. |
-| Date | 2026-11-12 (revision 3) |
+| Status | **Draft v0.1, revision 4 — NOT APPROVED.** Corrects the roadmap side of the second independent review: AR-25, AR-26, AR-27 (bootstrap tools and M0 evidence) and the review items added for AR-28 (`DECISIONS.md` §10). All are *addressed in draft — pending independent re-review*. No gate is open. |
+| Date | 2026-11-12 (revision 4) |
 | Paths | Relative to the repository root |
-| Branches | `main`, `agent/claude`, `agent/codex`, `review/architecture-v0.1` (read from the repository's own files on 2026-11-12), plus temporary `gate/<milestone>` branches (O-17) |
+| Branches | `main`, `agent/claude`, `agent/codex`, `review/architecture-v0.1` (read from the repository's own files on 2026-11-12; revision 3 is commit `fd2670d` on the last two), plus temporary `gate/<milestone>` branches (O-17) |
 | Test IDs | Defined once, in `TEST_PLAN.md` §5–§6. This document names them; it does not restate their pass conditions. |
 
 Nothing below has been run. `git` commands are run by the owner with Git for Windows; `sh`, `make` and `python3` run in WSL2 Ubuntu 24.04 from `/mnt/d/Agam-Computing/<worktree>`.
@@ -41,37 +41,39 @@ Completing M0 is a prerequisite of G-AOS and G-LANG; it opens neither.
 
 | | |
 |---|---|
-| **Prerequisites** | Revision 3 re-reviewed with no Critical or Major finding open against the process sections (blocker B-07); the owner has put the approved documents on `main` (B-04); the owner opens G-BOOT. |
+| **Prerequisites** | Revision 4 re-reviewed with no Critical or Major finding open against the process sections (blocker B-07); the owner has put the approved documents on `main` (B-04); the owner opens G-BOOT. |
 | **Purpose** | Replace assumptions about the machine with recorded evidence, and create the verification tools that later gates rely on. |
 
 ### 2.2 Deliverables (the complete permitted scope)
 
 | Task | Who | Paths and content |
 |---|---|---|
-| M0-O1 | Owner | WSL2 packages: `sudo apt install build-essential clang lld llvm make xorriso qemu-system-x86 gdb curl xz-utils python3 python3-venv python3-pip ovmf`. `build-essential` provides the `cc` that the Limine host utility needs; `curl` (or `wget`) and `xz-utils` are needed by the fetch script. |
+| M0-O1 | Owner | WSL2 packages: `sudo apt install build-essential clang lld llvm make xorriso qemu-system-x86 gdb curl xz-utils python3 python3-venv python3-pip ovmf`. `build-essential` provides `cc`; `curl` (or `wget`) and `xz-utils` are needed by the fetch script. The K1 static tests need `llvm-objdump`, `llvm-readelf` and `llvm-nm`: the second review did not find them under their plain names, and the owner reports them present under the `-18` names, which `AOS_KERNEL_SPEC.md` §2 accepts — so the `llvm` package is optional if `llvm-18` is already installed. |
 | M0-O2 | Owner | Python environment for later language tests, outside the repository: `python3 -m venv ~/.venvs/agam`, then `~/.venvs/agam/bin/pip install -r agam-lang/tests/requirements-dev.txt` |
 | M0-O3 | Owner | Confirm the Git identity of O-18 with Git for Windows; switch off automatic attribution in each AI tool. No configuration is changed by an agent. |
 | M0-A1 | Architect, committed by the owner **before any agent work** | `.gitattributes` (`* text=auto eol=lf`), `.gitignore` (`agam-os/build/`, `.gate/`, `__pycache__/`, `.pytest_cache/`), `VERSION`, `README.md`. Each worktree's files are then re-written from the index so they have LF endings (E-M0-03 checks the result). |
 | M0-X1 | Codex | `agam-dev/verify/check_env.sh`: prints name, path and version of every tool of `AOS_KERNEL_SPEC.md` §2; accepts `curl` or `wget`; exits non-zero if a required tool is missing; `--brief` prints one line; **never runs git**. The Git for Windows version is reported separately by the owner (E-M0-05). |
-| M0-X2 | Codex | `agam-dev/verify/check_ownership.py` (Git-free manifest checker, `TEST_PLAN.md` §8.3) and `agam-dev/verify/gate_manifest.ps1` (captures the manifests and binding files byte-exactly using read-only git commands) |
-| M0-X3 | Codex | **Runner scaffolding**: `agam-dev/verify/run.py` with catalogue loading, selection by gate, the result accounting and exit rules of `TEST_PLAN.md` §4.4, the binding check of §4.6, the `m0` suite, and its self-tests; `agam-dev/verify/catalogue.json` with the `m0` entries. No QEMU harness and no kernel or language test. |
+| M0-X2 | Codex | **Gate tools**, all Git-free: `agam-dev/verify/check_ownership.py` (manifests, merge, record commit; `TEST_PLAN.md` §8.3), `agam-dev/verify/check_inventory.py` (catalogue and summary against the inventory; §8.4), and `agam-dev/verify/gate_manifest.ps1` (byte-exact captures with read-only git commands) |
+| M0-X3 | Codex | **Runner scaffolding**: `agam-dev/verify/run.py` with catalogue loading, the inventory self-check, selection by gate, the result accounting and exit rules of `TEST_PLAN.md` §4.4, the binding and untracked-input checks of §4.6, the `m0` suite, and its self-tests; `agam-dev/verify/catalogue.json` with the `m0` entries. No QEMU harness and no kernel or language test. |
 | M0-X4 | Codex | `agam-lang/tests/requirements-dev.txt` with one exact `pytest` version; `agam-dev/verify/README.md` |
 | M0-X5 | Codex | `agam-dev/reports/codex/M0-evidence.md` |
 | M0-C1 | Claude | `agam-os/third_party/limine/PIN`, `agam-os/third_party/limine-protocol/PIN` and the vendored `limine.h`, with the values of `DECISIONS.md` §8.1; `agam-os/tools/fetch-limine.sh` (the only script that uses the network; builds the host utility with `cc`) |
 | M0-C2 | Claude | `agam-os/Makefile` skeleton with `check-env`, `print-flags`, `fetch`, `clean`, `distclean` only — no `test` target yet |
-| M0-C3 | Claude | `agam-dev/reports/claude/M0.md` |
+| M0-C3 | Claude | `agam-dev/reports/claude/M0.md`; and `agam-dev/reports/claude/M0-verify-review.md`, Claude Code's read-only reading of Codex's gate tools and runner for RV-M0-01 (O-26), naming the Codex tip it read and committed before Claude Code reports its own tip |
 
 ### 2.3 Verification
 
-The gate procedure of `TEST_PLAN.md` §8 with `<M>` = `M0`; in WSL2 `python3 agam-dev/verify/run.py gate M0`. Because no accepted checker exists yet, the owner compares each agent's changed paths with §2.2 by hand (E-M0-07).
+The gate procedure of `TEST_PLAN.md` §8 with `<M>` = `M0`, under **the M0 exception of §8.6**: no trusted tools exist yet, so the owner's complete by-hand check (E-M0-07, E-M0-08) and two independent readings of the new tools, by the architect and by Claude Code (RV-M0-01; O-26), take their place. In WSL2: `python3 agam-dev/verify/run.py gate M0`. The tools created here become the trusted tools of the K1 gate, where the protection is demonstrated once (E-K1-02).
 
 ### 2.4 Acceptance criteria
 
-1. `run.py gate M0` exits 0: required tests T-M0-01…06 all pass, none skipped or missing.
-2. Manual evidence E-M0-01…07 is filed.
-3. The tool versions (E-M0-04) match `DECISIONS.md` §8.2, or each difference is accepted by the owner. This clears B-01.
+1. `run.py gate M0` exits 0: required tests T-M0-01…07 all pass, none skipped or missing.
+2. Manual evidence E-M0-01…08 is filed, and review item RV-M0-01 is answered with no Critical or Major finding open.
+3. The tool versions (E-M0-04) match `DECISIONS.md` §8.2, or each difference is accepted by the owner; every required command is present, the LLVM tools under either accepted name (`AOS_KERNEL_SPEC.md` §2). This clears B-01.
 4. The owner has recorded a disposition for the Limine pin evidence (E-M0-06; B-02).
 5. No file outside §2.2 was added or changed.
+
+All of these are implementation-level verification (`TEST_PLAN.md` §2.5): none can be performed before G-BOOT opens.
 
 **Risks**: R-01, R-02, R-03, R-04, R-21, R-22, R-26.
 
@@ -85,7 +87,7 @@ Verification for every K-milestone is the gate procedure of `TEST_PLAN.md` §8, 
 
 | | |
 |---|---|
-| **Prerequisites** | M0 accepted; G-AOS open (needs B-02 disposition, B-05 and B-08 cleared, and the owner's explicit approval of the AOS documents). |
+| **Prerequisites** | M0 accepted; G-AOS open (needs B-02 disposition, B-05 cleared for the AOS track, B-08 cleared, and the owner's explicit approval of the AOS documents). |
 | **Spec sections** | `AOS_KERNEL_SPEC.md` §2–§7, §11, §12.1, §12.2, §12.4, §12.5 |
 
 | Task | Who | Paths |
@@ -99,8 +101,8 @@ Verification for every K-milestone is the gate procedure of `TEST_PLAN.md` §8, 
 
 **Acceptance criteria**
 
-1. `run.py gate K1` exits 0: T-K1-01…11 and the `m0` suite pass, none skipped or missing.
-2. E-K1-01 and RV-K1-01 are filed; no Critical or Major finding is open.
+1. `run.py gate K1` exits 0 and its summary is accepted by the trusted `check_inventory.py`: T-K1-01…11 and the `m0` suite pass, none skipped or missing.
+2. E-K1-01, E-K1-02 (weakened-checker control) and RV-K1-01 are filed; no Critical or Major finding is open.
 3. Measured build, boot and gate durations are recorded, and the owner confirms or re-plans K2–K5.
 
 **Risks**: R-04, R-05, R-07. K1 carries the most unknowns (first full link, fetch utility, hybrid ISO and boot together); K2 is deliberately light so K1 can overrun.
@@ -145,7 +147,7 @@ Verification for every K-milestone is the gate procedure of `TEST_PLAN.md` §8, 
 **Acceptance criteria**
 
 1. `run.py gate K3` exits 0: required tests T-K3-01…06 and T-K3-10…16, plus earlier suites.
-2. RV-K3-01 and RV-K3-02 are filed; no Critical or Major finding is open.
+2. RV-K3-01, RV-K3-02 and RV-K3-03 (ending guard) are filed; no Critical or Major finding is open.
 3. Stretch tests T-K3-07…09 are reported with their real status; any stretch failure is classified (`TEST_PLAN.md` §4.5).
 
 **Risks**: R-06, R-05, R-09. K3 is the highest correctness risk of the sprint.
@@ -206,7 +208,7 @@ Verification for every L-milestone is the gate procedure with `run.py gate <mile
 |---|---|---|---|---|---|
 | **Content** | Lexer, Fusion normaliser, `tokens` | Parser, AST, `ast`, `check` | Core interpreter, `run` | Functions, lists, built-ins, limits | Diagnostics, catalogues, closure |
 | **Spec sections** | §2–§4, §8 (lexical), §9 | §5, §6 | §7.1–§7.7, §7.10 without lists and functions | §7.8, §7.9, §7.11 | §8, Appendix A |
-| **Prerequisites** | M0 accepted; G-LANG open (B-05, B-06, B-09, B-10 cleared; owner approval) | L1 accepted | L2 accepted | L3 accepted | L4 accepted |
+| **Prerequisites** | M0 accepted; G-LANG open (B-05 cleared for the language track; B-06, B-09, B-10 cleared; owner approval) | L1 accepted | L2 accepted | L3 accepted | L4 accepted |
 | **Claude** | `agam-lang/pyproject.toml`; lexer, keyword table, source and token modules, lexical diagnostics, CLI `tokens` | Parser, nodes, CLI `ast`/`check` | Values, interpreter core, CLI `run` | Built-ins, lists, functions, limits; `agam-lang/examples/` | Both message catalogues, suggestions, message-language selection, internal-error path |
 | **Codex** | `fixtures/keywords_expected.json`; lexer, phrase and composition tests; fusion triples; `l1` catalogue entries | Golden ASTs, precedence, syntax-error and fusion-AST tests | Core conformance, numeric-closure and CLI tests | Function, list, built-in, cycle, limit, equality, evaluation-order and built-in-alias tests | `codes_expected.json`, `messages_expected.json`, rendered-diagnostic goldens, suggestion, language, fuzz and injection tests |
 | **Required tests** | T-L1-01…07 | T-L2-01…05 | T-L3-01…06 | T-L4-01…09 | T-L5-01…07 |
@@ -228,7 +230,7 @@ Independent expectations: Codex's fixtures and golden files are written by hand 
 
 | Milestone | Claude Code (implements) | Codex (tests, reviews) |
 |---|---|---|
-| M0 | Limine pins, fetch script, Makefile skeleton | Environment check, manifest checker, runner scaffolding with self-tests |
+| M0 | Limine pins, fetch script, Makefile skeleton | Environment check, gate tools (ownership and inventory checkers, capture helper), runner scaffolding with self-tests |
 | K1 | Build system, linker script, boot, serial, kprintf, panic, test hooks | QEMU harness, three cases, static checks, review |
 | K2 | GDT, TSS | Three cases, reproducibility check, review |
 | K3 | IDT, stubs, dump, expectations and finalisation | Twelve required cases (three stretch), dump parser, review |
@@ -259,8 +261,8 @@ Independent expectations: Codex's fixtures and golden files are written by hand 
 ## 7. Definition of done (every milestone)
 
 1. All deliverables exist at the listed paths, and nothing outside the milestone's scope changed.
-2. The gate procedure of `TEST_PLAN.md` §8 succeeded for one recorded set of `BASE`, `TIP_C`, `TIP_X` and `GATE_HEAD`, including manifest and merge verification.
-3. The runner exited 0 for that gate: every required test ran and passed; none was skipped or missing.
+2. The gate procedure of `TEST_PLAN.md` §8 succeeded for one recorded set of `BASE`, `TIP_C`, `TIP_X` and `GATE_HEAD`, using the trusted tools exported from `BASE` (or the M0 exception), including manifest, merge and record verification and the three live-state checks.
+3. The runner exited 0 for that gate and the trusted inventory check accepted its catalogue and summary: every required test of the inventory ran and passed; none was skipped, missing or reclassified.
 4. All `E-` and `RV-` items of the milestone are filed with evidence blocks.
 5. No Critical or Major finding is open; every stretch failure is classified.
 6. Every commit carries the identity of O-18 and no attribution text.
@@ -298,9 +300,10 @@ Likelihood and impact are the architect's judgement (L, M, H), not measurements.
 | R-22 | Building on `/mnt/d` from WSL is slow or behaves differently | M | M | Measured at K1; fallback is moving the repository into the WSL file system | K1 |
 | R-23 | Empty project folders are not stored by Git | H | L | They appear with their first committed files | — |
 | R-24 | AgamLang limits are policy, not a sandbox: one operation can still be costly, and the step limit is optional | M | M | Checks before allocation; untrusted programs are out of scope for v0.1 | RV-L4-01 |
-| R-25 | A gate result is reused after a tip, base or tool changed | M | H | Results are bound to exact SHAs and tool versions and are void otherwise | `TEST_PLAN.md` §4.6 |
-| R-26 | A branch under test weakens the tool that checks it | M | H | The ownership checker is taken from `BASE`; for M0 the owner checks paths by hand | `TEST_PLAN.md` §8.1 |
+| R-25 | A gate result is reused after a tip, base or tool changed; or a ref moves between test and promotion | M | H | Results are bound to exact SHAs and tool versions; live refs are re-checked with Git for Windows before capture, after the run and immediately before promotion; the record commit's delta is checked | `TEST_PLAN.md` §4.6, §8.2, §8.5 |
+| R-26 | A branch under test weakens a tool that checks it, or removes a required test from the catalogue | M | H | Checkers and the inventory are exported from `BASE` to a directory outside every worktree; the inventory lives in the architecture documents; changes to `agam-dev/verify/` need two independent readings, by the architect and by Claude Code (O-26); for M0 the owner checks by hand | `TEST_PLAN.md` §8.1, §8.4, §8.6; E-K1-02 |
 | R-27 | The debugger port is reachable from the network | L | M | `make debug` binds to `127.0.0.1` only | RV-K1-01 |
+| R-28 | The candidate runner misreports a test it did not really run | L | H | Not mechanically excluded. Two independent readings, by the architect and by Claude Code, of every verification-path change; architect's spot checks; kernel tests leave serial logs and host statuses as artefacts | `RV-<milestone>-VP`; reviews |
 
 ---
 
